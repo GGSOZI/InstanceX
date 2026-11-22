@@ -1,33 +1,58 @@
-# InstanceX
-InstanceX v4.7 is an advanced Roblox inspection and development toolkit featuring a Dex-style Explorer, instance and property inspection, script viewer, command console, instance saving, animation logging, VFX/SFX tools, and interactive 3D/model previews—all organized in one customizable interface.
+# Instance X
 
-InstanceX v4.7
+Dex++ based explorer and properties for Roblox executors, with a copy suite built in: copy tools, GUIs and models, save instances, and record animations.
 
-An advanced Roblox instance inspection, exploration, and development toolkit.
+Revived/Upgraded by DuaKNo | Dex ++ by Chillz | Dex by Moons
 
-InstanceX combines an enhanced Dex-style Explorer with a collection of powerful utilities designed for inspecting, analyzing, and interacting with Roblox game instances.
+## Run it
 
-Features
+```lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/GGSOZI/InstanceX/main/loader.lua"))()
+```
 
-- Explorer — Browse and inspect game instances in a structured hierarchy.
-- Properties — View and examine instance properties.
-- Script Viewer — Inspect available scripts and their contents.
-- Console — Execute commands and view output.
-- Save Instance — Save and export selected game instances.
-- Animation Logger — Record and inspect animation-related activity.
-- VFX & SFX Tools — Capture and inspect visual and audio effects.
-- 3D Preview — Preview objects in a dedicated 3D viewer.
-- Model Viewer — Inspect models with interactive previews.
-- Settings — Customize available tools and interface behavior.
+Only Explorer and Properties open on execute. Everything else is in the side menu.
 
-Credits
+## What is inside
 
-- Developed and maintained by DuaKNo.
-- Built on Dex++ by Chillz, a revival of Moon's Dex.
+- **Explorer + Properties** with search, drag, right click actions and the usual Dex++ tools
+- **Copy** copies any GUI or tool as code you can run in other games
+- **Tool Copy** lists your tools and copies them with models, meshes, textures and scripts
+- **Recorder** logs animations, VFX and sound
+- **Save Instance** saves the place or any object as `.rbxlx` / `.rbxmx`
+- **Notepad, Console, 3D Viewer**
 
----
+## Files
 
-InstanceX v4.5 — A unified toolkit for Roblox inspection and development.
-by DuaKNk
-developed by DuaKNo
-idea from Chillz and Moons
+| File | What it does |
+| --- | --- |
+| `loader.lua` | tiny loader, downloads `Instance_X.lua` from this repo and runs it |
+| `Instance_X.lua` | the full script |
+| `modules/SaveInstance.lua` | standalone saver. Instance X loads it from here, and you can use it in your own scripts |
+
+## Saving
+
+Instance X uses the first one that works: your executor's own `saveinstance`, then `modules/SaveInstance.lua` from this repo, then the saver built into the script. Files go to your executor's `workspace` folder.
+
+## Using the saver on its own
+
+```lua
+local save = loadstring(game:HttpGet("https://raw.githubusercontent.com/GGSOZI/InstanceX/main/modules/SaveInstance.lua"))()
+save({ Object = game, FilePath = "MyPlace", Decompile = true })
+save({ Object = workspace.Model, FilePath = "MyModel" })
+```
+
+## Notes
+
+- Client side only. Anything the server owns will not be copied.
+- Made for executors like Delta, Solara and Wave. Some executors lock functions such as `decompile`.
+- If you fork the repo, change `USER`, `REPO` and `BRANCH` at the top of `loader.lua`.
+
+## Credits
+
+- Revived/Upgraded by **DuaKNo**
+- Dex++ by **Chillz**
+- Dex by **Moons**
+- Toon (IY Dex and PRs), Cazan (3D Preview)
+
+Instagram: [me_duakno](https://instagram.com/me_duakno)
+Discord: https://discord.gg/empgqd5qpq
