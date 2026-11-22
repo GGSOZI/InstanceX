@@ -15610,9 +15610,9 @@ Main = (function()
 			{8,"Frame",{BackgroundColor3=Color3.new(0.20392157137394,0.20392157137394,0.20392157137394),BorderSizePixel=0,Name="ProgressBar",Parent={3},Position=UDim2.new(0,110,0,145),Size=UDim2.new(0,0,0,4),}},
 			{9,"Frame",{BackgroundColor3=Color3.new(0.2392156869173,0.56078433990479,0.86274510622025),BorderSizePixel=0,Name="Bar",Parent={8},Size=UDim2.new(0,0,1,0),}},
 			{10,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://2764171053",ImageColor3=Color3.new(0.17647059261799,0.17647059261799,0.17647059261799),Parent={8},ScaleType=1,Size=UDim2.new(1,0,1,0),SliceCenter=Rect.new(2,2,254,254),}},
-			{11,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Creator",Parent={2},Position=UDim2.new(0,8,1,-34),Size=UDim2.new(1,-16,0,30),Text="Revived/Upgraded by DuaKNo | Dex ++ by Chillz | Dex by Moons",TextColor3=Color3.new(1,1,1),TextSize=12,TextWrapped=true,TextXAlignment=1,TextYAlignment=2,}},
+			{11,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Creator",Parent={2},Position=UDim2.new(1,-110,1,-20),Size=UDim2.new(0,105,0,20),Text="Developed by DuaKNo",TextColor3=Color3.new(1,1,1),TextSize=14,TextXAlignment=1,}},
 			{12,"UIGradient",{Parent={11},Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1,0),NumberSequenceKeypoint.new(1,1,0),}),}},
-			{13,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Version",Parent={2},Position=UDim2.new(1,-110,1,-52),Size=UDim2.new(0,105,0,20),Text=Main.Version,TextColor3=Color3.new(1,1,1),TextSize=14,TextXAlignment=1,}},
+			{13,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Version",Parent={2},Position=UDim2.new(1,-110,1,-35),Size=UDim2.new(0,105,0,20),Text=Main.Version,TextColor3=Color3.new(1,1,1),TextSize=14,TextXAlignment=1,}},
 			{14,"UIGradient",{Parent={13},Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1,0),NumberSequenceKeypoint.new(1,1,0),}),}},
 			{15,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Image="rbxassetid://1427967925",Name="Outlines",Parent={2},Position=UDim2.new(0,-5,0,-5),ScaleType=1,Size=UDim2.new(1,10,1,10),SliceCenter=Rect.new(6,6,25,25),TileSize=UDim2.new(0,20,0,20),}},
 			{16,"UIGradient",{Parent={15},Rotation=-30,Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1,0),NumberSequenceKeypoint.new(1,1,0),}),}},
@@ -16868,29 +16868,6 @@ Main = (function()
 		Lib.ShowGui(gui)
 	end
 
-	Main.Credit = function()
-		local StarterGui = game:GetService("StarterGui")
-		local icon
-		pcall(function()
-			local id = game:GetService("Players"):GetUserIdFromNameAsync("DuaKNo")
-			icon = "rbxthumb://type=AvatarHeadShot&id=" .. id .. "&w=150&h=150"
-		end)
-		local list = {
-			{ Title = "Instance X: Dex + copy suite", Text = "By DuaKNo", Icon = icon },
-			{ Title = "Follow on Instagram", Text = "me_duakno" },
-			{ Title = "Join Discord server for more", Text = "discord.gg/empgqd5qpq" },
-		}
-		for _, n in ipairs(list) do
-			n.Duration = 6
-			for _ = 1, 10 do
-				local ok = pcall(function() StarterGui:SetCore("SendNotification", n) end)
-				if ok then break end
-				task.wait(0.3)
-			end
-			task.wait(0.4)
-		end
-	end
-
 	Main.SetupFilesystem = function()
 		if not env.writefile or not env.makefolder then return end
 
@@ -17049,7 +17026,6 @@ Main = (function()
 		Explorer.Window:Show({Align = "right", Pos = 1, Size = 200, Silent = true})
 		Properties.Window:Show({Align = "right", Pos = 2, Size = 150, Silent = true})
 		pcall(function() Main.CopyWin.GuiElems.Main.Position = UDim2.new(0, 10, 0, 90) end)
-		task.spawn(function() pcall(Main.Credit) end)
 		Lib.DeferFunc(function() Lib.Window.ToggleSide("right") end)
 
 		local genv = (getgenv or function() return _G end)()
