@@ -3854,6 +3854,8 @@ local function main()
 			control.PressColor = data.PressColor or control.StartColor:lerp(lerpTo,delta)
 			control.HoverColor = data.HoverColor or control.StartColor:lerp(control.PressColor,0.6)
 			control.OutlineColor = data.OutlineColor
+			Lib.AnimControls = Lib.AnimControls or setmetatable({}, {__mode = "k"})
+			Lib.AnimControls[control] = true
 		end
 
 		button.InputBegan:Connect(function(input)
@@ -13243,7 +13245,11 @@ end
 local function main()
 	local SaveInstance = {}
 	local window, ListFrame
-	local fileName = "Place_"..game.PlaceId.."_"..game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name.."_{TIMESTAMP}"
+	local fileName
+	do
+		local okN, pname = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name end)
+		fileName = "Place_"..game.PlaceId.."_"..((okN and type(pname) == "string" and pname:gsub("[^%w _%-]", "")) or "Game").."_{TIMESTAMP}"
+	end
 	local Saving = false
 
 	local SaveInstanceArgs = {
@@ -13256,7 +13262,8 @@ local function main()
 		MaxThreads = 3,
 		ShowStatus = true,
 		IgnoreDefaultProps = true,
-		IsolateStarterPlayer = true
+		IsolateStarterPlayer = true,
+		SaveEverything = true,
 	}
 
 	local function AddCheckbox(title, default)
@@ -13379,6 +13386,11 @@ local function main()
 		Padding.PaddingLeft = UDim.new(0, 10)
 		Padding.PaddingRight = UDim.new(0, 10)
 		Padding.PaddingTop = UDim.new(0, 5)
+
+		local Everything = AddCheckbox("Copy everything (ScreenGuis, tools, player scripts)", SaveInstanceArgs.SaveEverything)
+		Everything.OnInput:Connect(function()
+			SaveInstanceArgs.SaveEverything = Everything.Toggled
+		end)
 
 		local Decompile = AddCheckbox("Decompile Scripts (LocalScript and ModuleScript)", SaveInstanceArgs.Decompile)
 		Decompile.OnInput:Connect(function()
@@ -13826,7 +13838,11 @@ end
 local function main()
 	local SettingsWindow = {}
 	local window, ListFrame
-	local fileName = "Place_"..game.PlaceId.."_"..game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name.."_{TIMESTAMP}"
+	local fileName
+	do
+		local okN, pname = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name end)
+		fileName = "Place_"..game.PlaceId.."_"..((okN and type(pname) == "string" and pname:gsub("[^%w _%-]", "")) or "Game").."_{TIMESTAMP}"
+	end
 	local Saving = false
 
 	local function AddCheckbox(title, default)
@@ -14018,7 +14034,7 @@ local function main()
 	SettingsWindow.Init = function()
 		window = Lib.Window.new()
 		window:SetTitle("Settings")
-		window:Resize(250,375)
+		window:Resize(300,440)
 		SettingsWindow.Window = window
 
 		ListFrame = Instance.new("ScrollingFrame")
@@ -14061,6 +14077,214 @@ local function main()
 		Padding.PaddingRight = UDim.new(0, 10)
 		Padding.PaddingTop = UDim.new(0, 5)
 
+		local function AddButton(text, fn)
+			local b = Lib.Button.new()
+			b.Gui.Parent = ListFrame
+			b.Gui.Size = UDim2.new(1,0,0,20)
+			b.Gui.Text = text
+			b.OnClick:Connect(fn)
+			return b
+		end
+
+		local function hexOf(c)
+			return string.format("#%02X%02X%02X", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+		end
+		local function parseColor(s)
+			s = tostring(s):gsub("%s", "")
+			local h = s:match("^#?(%x%x%x%x%x%x)$")
+			if h then
+				return Color3.fromRGB(tonumber(h:sub(1, 2), 16), tonumber(h:sub(3, 4), 16), tonumber(h:sub(5, 6), 16))
+			end
+			local r, g, b = s:match("^(%d+),(%d+),(%d+)$")
+			if r then
+				return Color3.fromRGB(math.clamp(tonumber(r), 0, 255), math.clamp(tonumber(g), 0, 255), math.clamp(tonumber(b), 0, 255))
+			end
+			return nil
+		end
+
+		local colorRows, picker = {}, nil
+		local function refreshColors()
+			local p = Main.GetPalette()
+			for role, row in pairs(colorRows) do
+				if p[role] then
+					row.swatch.BackgroundColor3 = p[role]
+					row.box.Text = hexOf(p[role])
+				end
+			end
+		end
+		SettingsWindow.RefreshColors = refreshColors
+
+		local function editRole(role, col)
+			local p = Main.GetPalette()
+			p[role] = col
+			if role == "text" then
+				p.sub = col:Lerp(p.win, 0.33)
+			elseif role == "win" or role == "title" then
+				p.row2 = p.win
+				p.row1 = p.win:Lerp(p.title, 0.7)
+			end
+			Main.SetPalette(p)
+			refreshColors()
+		end
+
+		local function AddColor(title, role)
+			local frame = Lib.Frame.new()
+			frame.Gui.Parent = ListFrame
+			frame.Gui.Transparency = 1
+			frame.Gui.Size = UDim2.new(1,0,0,20)
+
+			local listlayout = Instance.new("UIListLayout")
+			listlayout.Parent = frame.Gui
+			listlayout.FillDirection = Enum.FillDirection.Horizontal
+			listlayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+			listlayout.VerticalAlignment = Enum.VerticalAlignment.Center
+			listlayout.Padding = UDim.new(0, 8)
+
+			local swatch = Instance.new("TextButton")
+			swatch.Text = ""
+			swatch.AutoButtonColor = false
+			swatch.Size = UDim2.new(0,28,0,15)
+			swatch.BorderColor3 = Settings.Theme.Outline3
+			swatch.ZIndex = 2
+			swatch.Parent = frame.Gui
+
+			local box = Instance.new("TextBox")
+			box.BackgroundColor3 = Settings.Theme.TextBox
+			box.BorderColor3 = Settings.Theme.Outline3
+			box.ClearTextOnFocus = false
+			box.TextColor3 = Settings.Theme.Text
+			box.Font = Enum.Font.SourceSans
+			box.TextSize = 14
+			box.ZIndex = 2
+			box.Size = UDim2.new(0,64,0,15)
+			box.Parent = frame.Gui
+
+			local label = Lib.Label.new()
+			label.Parent = frame.Gui
+			label.Size = UDim2.new(1, 0,1, -15)
+			label.Text = title
+			label.TextTruncate = Enum.TextTruncate.AtEnd
+
+			colorRows[role] = { swatch = swatch, box = box }
+
+			box.FocusLost:Connect(function()
+				local c = parseColor(box.Text)
+				if c then editRole(role, c) else refreshColors() end
+			end)
+			swatch.MouseButton1Click:Connect(function()
+				if not picker then
+					picker = Lib.ColorPicker.new()
+					picker.OnSelect:Connect(function(col)
+						if picker.CurrentRole then editRole(picker.CurrentRole, col) end
+					end)
+				end
+				picker.CurrentRole = role
+				picker:SetColor(Main.GetPalette()[role])
+				picker:Show()
+			end)
+		end
+
+		AddSeperator("Theme")
+		AddText("Tap a square, or type #RRGGBB.")
+		AddText("Changes every window and button.")
+		local presetNames = {}
+		for _, pr in ipairs(Main.Presets) do presetNames[#presetNames + 1] = pr[1] end
+		local presetDrop = AddDropdown("Preset", presetNames, nil, true, 110)
+		presetDrop.OnSelect:Connect(function()
+			for _, pr in ipairs(Main.Presets) do
+				if pr[1] == presetDrop.Selected then
+					Main.SetPalette(pr[2])
+					refreshColors()
+					break
+				end
+			end
+		end)
+		AddColor("Accent (selected)", "sel")
+		AddColor("Window background", "win")
+		AddColor("Title bars", "title")
+		AddColor("Buttons", "btn")
+		AddColor("Boxes / code", "code")
+		AddColor("Text", "text")
+		AddColor("Outlines", "outline")
+		AddButton("Reset theme to default", function()
+			Main.SetPalette(Main.Presets[1][2])
+			refreshColors()
+		end)
+		refreshColors()
+
+		AddSeperator("Menu button")
+		local btnText = AddTextbox("Button text", Main.Options.ButtonText, 90)
+		btnText.FocusLost:Connect(function()
+			local t = btnText.Text:gsub("^%s+", ""):gsub("%s+$", "")
+			if t == "" then t = "InstanceX" end
+			Main.Options.ButtonText = string.sub(t, 1, 14)
+			btnText.Text = Main.Options.ButtonText
+			Main.ApplyOptions()
+			Main.SaveOptions()
+		end)
+		local btnSize = AddDropdown("Button size", {"Small", "Normal", "Large"}, Main.Options.ButtonSize, false, 80)
+		btnSize.OnSelect:Connect(function()
+			Main.Options.ButtonSize = btnSize.Selected
+			Main.ApplyOptions()
+			Main.SaveOptions()
+		end)
+		local btnAlpha = AddTextbox("Button see-through (0 to 0.8)", tostring(Main.Options.ButtonAlpha), 30)
+		btnAlpha.FocusLost:Connect(function()
+			local v = tonumber(btnAlpha.Text)
+			if v then Main.Options.ButtonAlpha = math.clamp(v, 0, 0.8) end
+			btnAlpha.Text = tostring(Main.Options.ButtonAlpha)
+			Main.ApplyOptions()
+			Main.SaveOptions()
+		end)
+		local roundBox = AddTextbox("Roundness (0 to 16)", tostring(Main.Options.Corner), 30)
+		roundBox.FocusLost:Connect(function()
+			local v = tonumber(roundBox.Text)
+			if v then Main.Options.Corner = math.clamp(math.floor(v), 0, 16) end
+			roundBox.Text = tostring(Main.Options.Corner)
+			Main.ApplyOptions()
+			Main.SaveOptions()
+		end)
+		local autoOpen = AddCheckbox("Open the menu on start", Main.Options.AutoOpen)
+		autoOpen.OnInput:Connect(function()
+			Main.Options.AutoOpen = autoOpen.Toggled
+			Main.SaveOptions()
+		end)
+		local keyDrop = AddDropdown("Hide / show all key", {"None", "RightShift", "RightControl", "Insert", "Home", "End", "Delete"}, Main.Options.ToggleKey, false, 100)
+		keyDrop.OnSelect:Connect(function()
+			Main.Options.ToggleKey = keyDrop.Selected
+			Main.SaveOptions()
+		end)
+		AddButton("Hide all windows (tap IX to bring back)", function()
+			Main.SetGuiHidden(true)
+		end)
+
+		AddSeperator("Tool Copy")
+		AddText("What gets copied with a tool.")
+		local toolDefs = {
+			{ "Scripts and modules", "scripts" }, { "Sounds", "sounds" }, { "Animations", "anims" },
+			{ "Effects (particles, beams, lights)", "fx" }, { "GUIs on the tool", "gui" },
+			{ "Attributes and tags", "attrs" }, { "Every other object type", "other" },
+		}
+		for _, td in ipairs(toolDefs) do
+			local cb = AddCheckbox(td[1], Main.Options.Tool[td[2]])
+			cb.OnInput:Connect(function()
+				Main.Options.Tool[td[2]] = cb.Toggled
+				Main.SaveOptions()
+			end)
+		end
+
+		AddButton("Reset all InstanceX options", function()
+			Main.Options = Main.DefaultOptions()
+			local g = (getgenv or function() return _G end)()
+			g.__RPP_ToolOpts = Main.Options.Tool
+			Main.SetPalette(Main.Presets[1][2])
+			Main.ApplyOptions()
+			Main.SaveOptions()
+			refreshColors()
+			window:SetTitle("Settings - reset")
+			task.delay(2, function() window:SetTitle("Settings") end)
+		end)
+
 		AddSeperator("UI")
 
 		local titleonmiddle = AddCheckbox("Window Title On Middle", Settings.Window.TitleOnMiddle)
@@ -14070,7 +14294,8 @@ local function main()
 
 		local bgTransparency = AddTextbox("Background Transparency", tostring(Settings.Window.Transparency), 15)
 		bgTransparency.FocusLost:Connect(function()
-			Settings.Window.Transparency = tonumber(bgTransparency.Text)
+			local tv = tonumber(bgTransparency.Text)
+			if tv then Settings.Window.Transparency = math.clamp(tv, 0, 1) else bgTransparency.Text = tostring(Settings.Window.Transparency) end
 		end)
 
 		local classIcon = AddDropdown("Class Icons", {"Old", "NewDark", "Vanilla3"}, Settings.ClassIcon, false, 100)
@@ -14655,9 +14880,37 @@ Main = (function()
 					if p.Character then playerChars[p.Character] = true end
 				end
 			end
+			local everything = options.SaveEverything == true and isPlace and not options.SavePlayers
+			local extra = {}
+			if everything then
+				local lp = Players.LocalPlayer
+				local function newOnes(from, to)
+					local have, out = {}, {}
+					if to then
+						for _, c in ipairs(to:GetChildren()) do have[c.Name .. "|" .. c.ClassName] = true end
+					end
+					if from then
+						for _, c in ipairs(from:GetChildren()) do
+							if not have[c.Name .. "|" .. c.ClassName] then out[#out + 1] = c end
+						end
+					end
+					return out
+				end
+				pcall(function()
+					local sg, pg = game:FindService("StarterGui"), lp and lp:FindFirstChildOfClass("PlayerGui")
+					if sg and pg then extra[sg] = newOnes(pg, sg) end
+					local sp, bp = game:FindService("StarterPack"), lp and lp:FindFirstChildOfClass("Backpack")
+					if sp and bp then extra[sp] = newOnes(bp, sp) end
+					local stp = game:FindService("StarterPlayer")
+					local sps = stp and stp:FindFirstChild("StarterPlayerScripts")
+					local ps = lp and lp:FindFirstChild("PlayerScripts")
+					if sps and ps then extra[sps] = newOnes(ps, sps) end
+				end)
+			end
 			local function keep(o)
 				local cn = o.ClassName
 				if not API.Classes[cn] then return false end
+				if options.SaveEverything == true and Main.IsRobloxDefault(o) then return false end
 				if cn == "Player" and not options.SavePlayers then return false end
 				if o == camera then return false end
 				if playerChars[o] then return false end
@@ -14672,6 +14925,11 @@ Main = (function()
 				if okC then
 					for _, c in ipairs(ch) do
 						if keep(c) then list[#list + 1] = c end
+					end
+				end
+				if extra[o] then
+					for _, c in ipairs(extra[o]) do
+						if keep(c) and not ids[c] then list[#list + 1] = c end
 					end
 				end
 				kids[o] = list
@@ -15041,6 +15299,27 @@ Main = (function()
 					o2.Object = obj
 					o2.FilePath = filepath
 					o2.FileName = filepath
+					if options.SaveEverything == true and obj == game then
+						o2.IsolateLocalPlayer = true
+						local ign = {}
+						pcall(function()
+							local lp = game:GetService("Players").LocalPlayer
+							local function scan(folder)
+								if not folder then return end
+								for _, c in ipairs(folder:GetChildren()) do
+									if Main.IsRobloxDefault(c) then ign[#ign + 1] = c end
+								end
+							end
+							scan(lp:FindFirstChildOfClass("PlayerGui"))
+							scan(lp:FindFirstChild("PlayerScripts"))
+							local stp = game:FindService("StarterPlayer")
+							scan(stp and stp:FindFirstChild("StarterPlayerScripts"))
+							scan(stp and stp:FindFirstChild("StarterCharacterScripts"))
+							scan(game:FindService("Chat"))
+							scan(game:FindService("ReplicatedFirst"))
+						end)
+						if #ign > 0 then o2.IgnoreList = ign end
+					end
 					return o2
 				end
 
@@ -15069,6 +15348,8 @@ Main = (function()
 				return saved
 			end
 		end)()
+
+		Main.saveinstance = env.saveinstance
 
 		env.parsefile = function(name)
 			return tostring(name):gsub("[*\\?:<>|]+", ""):sub(1, 175)
@@ -15840,10 +16121,10 @@ Main = (function()
 	Main.SetMainGuiOpen = function(val)
 		Main.MainGuiOpen = val
 
-		Main.MainGui.OpenButton.Text = val and "Close" or "InstanceX"
+		Main.MainGui.OpenButton.Text = val and "Close" or Main.Options.ButtonText
 		if val then Main.MainGui.OpenButton.MainFrame.Visible = true end
-		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,224,0,200) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quad,0.2,true)
-		service.TweenService:Create(Main.MainGui.OpenButton,TweenInfo.new(0.2,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency = val and 0 or (Lib.CheckMouseInGui(Main.MainGui.OpenButton) and 0 or 0.2)}):Play()
+		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,224,0,236) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quad,0.2,true)
+		service.TweenService:Create(Main.MainGui.OpenButton,TweenInfo.new(0.2,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency = val and 0 or (Lib.CheckMouseInGui(Main.MainGui.OpenButton) and 0 or Main.Options.ButtonAlpha)}):Play()
 
 		if Main.MainGuiMouseEvent then Main.MainGuiMouseEvent:Disconnect() end
 
@@ -15869,7 +16150,7 @@ Main = (function()
 			{1,"ScreenGui",{IgnoreGuiInset=true,Name="MainMenu",}},
 			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Color3.new(0.17647059261799,0.17647059261799,0.17647059261799),BorderSizePixel=0,Font=4,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,100,0,32),Text="InstanceX",TextColor3=Color3.new(1,1,1),TextSize=16,TextTransparency=0.20000000298023,}},
 			{3,"UICorner",{CornerRadius=UDim.new(0,4),Parent={2},}},
-			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(0.17647059261799,0.17647059261799,0.17647059261799),ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,224,0,200),}},
+			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(0.17647059261799,0.17647059261799,0.17647059261799),ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,224,0,236),}},
 			{5,"UICorner",{CornerRadius=UDim.new(0,4),Parent={4},}},
 			{6,"Frame",{BackgroundColor3=Color3.new(0.20392157137394,0.20392157137394,0.20392157137394),Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-24),Size=UDim2.new(1,0,0,24),}},
 			{7,"UICorner",{CornerRadius=UDim.new(0,4),Parent={6},}},
@@ -15896,7 +16177,7 @@ Main = (function()
 		Main.MainGuiOpen = false
 
 		local openButton = gui.OpenButton
-		openButton.BackgroundTransparency = 0.2
+		openButton.BackgroundTransparency = Main.Options.ButtonAlpha
 		openButton.MainFrame.Size = UDim2.new(0,0,0,0)
 		openButton.MainFrame.Visible = false
 		openButton.MouseButton1Click:Connect(function()
@@ -15911,7 +16192,7 @@ Main = (function()
 
 		openButton.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-				service.TweenService:Create(Main.MainGui.OpenButton,TweenInfo.new(0,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency = Main.MainGuiOpen and 0 or 0.2}):Play()
+				service.TweenService:Create(Main.MainGui.OpenButton,TweenInfo.new(0,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency = Main.MainGuiOpen and 0 or Main.Options.ButtonAlpha}):Play()
 			end
 		end)
 
@@ -15965,6 +16246,7 @@ Main = (function()
 				Main.CreateApp({Name = "Explorer", IconMap = Main.LargeIcons, Icon = "Explorer", Open = true, Window = Explorer.Window})
 		Main.CreateApp({Name = "Recorder", IconMap = Main.LargeIcons, Icon = "Watcher", Window = Main.RecorderWin})
 		Main.CreateApp({Name = "Properties", IconMap = Main.LargeIcons, Icon = "Properties", Open = true, Window = Properties.Window})
+		Main.CreateApp({Name = "Settings", IconMap = Main.LargeIcons, Icon = "Output", Window = SettingsWindow.Window})
 		Main.CreateApp({Name = "Copy", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = Main.CopyWin})
 		Main.CreateApp({Name = "Tool Copy", IconMap = Main.LargeIcons, Icon = "Honey", Window = Main.ToolWin})
 		Main.CreateApp({Name = "3D Viewer", IconMap = Main.LargeIcons, Icon = "Object", Window = ModelViewer.Window})
@@ -15992,6 +16274,7 @@ Main = (function()
 		actionApp("Saved", "Book", "openSaved")
 		actionApp("NPC Hit", "Watcher", "openNpc")
 		actionApp("Design Script", "Script_Viewer", "openDesign")
+		actionApp("Save Game", "Book", "openSaveGame")
 
 		local cptsOnMouseClick = nil
 		local cptsCtl
@@ -16890,6 +17173,251 @@ Main = (function()
 		return Main.DepsVersionData and Main.ClientVersion == Main.DepsVersionData[1]
 	end
 
+	-- Roblox's own code that every game has, plus this tool's own GUIs; never copied by "Copy everything"
+	Main.IsRobloxDefault = function(o)
+		local ok, res = pcall(function()
+			local n, cn = o.Name, o.ClassName
+			if string.sub(n, 1, 5) == "_DPP_" or n == "AnimVFXLogger" or o == Main.MiniGui then return true end
+			local par = o.Parent
+			if cn == "LocalScript" or cn == "ModuleScript" or cn == "Script" then
+				if n == "PlayerModule" or n == "RbxCharacterSounds" or n == "PlayerScriptsLoader" or n == "ChatScript"
+					or n == "BubbleChat" or n == "ChatModules" or n == "ChatServiceRunner" then return true end
+				if (n == "Animate" or n == "Health") and par and (par.Name == "StarterCharacterScripts" or par:FindFirstChildOfClass("Humanoid")) then return true end
+			end
+			if cn == "ScreenGui" and par and par.ClassName == "PlayerGui" and (n == "Chat" or n == "BubbleChat" or n == "TouchGui" or n == "ControlGui") then return true end
+			if cn == "Folder" and n == "ChatModules" then return true end
+			return false
+		end)
+		return ok and res or false
+	end
+
+	Main.PaletteRoles = {"win","title","outline","btn","sel","green","text","sub","row1","row2","code","danger"}
+	do
+		local C3 = Color3.fromRGB
+		local function pal(win,title,outline,btn,sel,green,text,sub,row1,row2,code,danger)
+			return {win=win,title=title,outline=outline,btn=btn,sel=sel,green=green,text=text,sub=sub,row1=row1,row2=row2,code=code,danger=danger}
+		end
+		Main.Presets = {
+			{"Dex Dark", pal(C3(45,45,45),C3(52,52,52),C3(33,33,33),C3(60,60,60),C3(11,90,175),C3(40,120,70),C3(255,255,255),C3(185,185,185),C3(50,50,50),C3(46,46,46),C3(38,38,38),C3(135,50,50))},
+			{"Midnight", pal(C3(18,22,38),C3(26,32,56),C3(60,72,110),C3(40,50,82),C3(70,110,230),C3(40,130,100),C3(235,240,255),C3(150,160,190),C3(24,30,50),C3(20,26,44),C3(12,15,28),C3(160,60,70))},
+			{"Light", pal(C3(235,235,238),C3(212,214,222),C3(170,172,182),C3(205,208,218),C3(50,120,220),C3(50,150,90),C3(25,25,30),C3(90,90,100),C3(246,246,248),C3(238,238,242),C3(255,255,255),C3(200,70,70))},
+			{"Purple", pal(C3(32,24,46),C3(46,34,68),C3(98,78,140),C3(66,50,96),C3(140,80,230),C3(60,140,110),C3(250,240,255),C3(185,170,210),C3(40,30,58),C3(35,26,52),C3(24,18,36),C3(170,60,90))},
+			{"Hacker", pal(C3(8,14,10),C3(14,26,18),C3(30,90,50),C3(22,44,30),C3(0,150,70),C3(0,120,60),C3(120,255,150),C3(70,170,100),C3(12,20,14),C3(10,17,12),C3(4,8,6),C3(150,40,40))},
+			{"Rose", pal(C3(44,28,34),C3(64,38,48),C3(120,70,88),C3(86,52,64),C3(220,70,120),C3(70,140,100),C3(255,240,244),C3(205,170,182),C3(54,34,42),C3(48,30,38),C3(34,20,26),C3(150,50,50))},
+			{"Ocean", pal(C3(14,34,40),C3(20,52,62),C3(45,100,115),C3(28,70,82),C3(0,128,150),C3(30,140,90),C3(230,250,252),C3(150,195,205),C3(18,44,52),C3(16,38,45),C3(9,24,29),C3(150,60,60))},
+			{"AMOLED Black", pal(C3(0,0,0),C3(18,18,18),C3(60,60,60),C3(32,32,32),C3(0,110,220),C3(30,130,60),C3(255,255,255),C3(170,170,170),C3(16,16,16),C3(9,9,9),C3(4,4,4),C3(140,40,40))},
+			{"Sunset", pal(C3(38,28,36),C3(60,38,52),C3(120,80,96),C3(78,52,66),C3(214,90,60),C3(60,140,80),C3(255,244,236),C3(210,180,180),C3(48,34,44),C3(42,30,39),C3(28,20,27),C3(130,40,70))},
+			{"Solarized", pal(C3(0,43,54),C3(7,54,66),C3(88,110,117),C3(16,68,82),C3(38,139,210),C3(90,125,10),C3(238,232,213),C3(160,175,175),C3(4,50,62),C3(2,46,58),C3(0,34,43),C3(180,60,50))},
+		}
+	end
+
+	local function colorKey(c)
+		return string.format("%d,%d,%d", math.floor(c.R*255+0.5), math.floor(c.G*255+0.5), math.floor(c.B*255+0.5))
+	end
+
+	-- every role has to stay a different colour, the recolor works by matching colours
+	Main.NormalizePalette = function(p)
+		local out, seen = {}, {}
+		for _, role in ipairs(Main.PaletteRoles) do
+			local c = p[role] or Color3.fromRGB(128,128,128)
+			local r, g, b = math.floor(c.R*255+0.5), math.floor(c.G*255+0.5), math.floor(c.B*255+0.5)
+			local tries = 0
+			while seen[r..","..g..","..b] and tries < 8 do
+				if b < 255 then b = b + 1 else b = b - 1 end
+				tries = tries + 1
+			end
+			seen[r..","..g..","..b] = true
+			out[role] = Color3.fromRGB(r, g, b)
+		end
+		return out
+	end
+
+	Main.GetPalette = function()
+		local c = {}
+		if Main.Palette then
+			for k, v in pairs(Main.Palette) do c[k] = v end
+			return c
+		end
+		local T = Settings.Theme
+		local d = Main.Presets[1][2]
+		return {
+			win = T.Main2, title = T.Main1, outline = T.Outline1, btn = T.Button, sel = T.ListSelection, text = T.Text,
+			sub = d.sub, code = T.TextBox, row1 = d.row1, row2 = d.row2, green = d.green, danger = d.danger,
+		}
+	end
+
+	Main.PaletteFile = "InstanceX/palette.json"
+	Main.OptionsFile = "InstanceX/options.json"
+
+	Main.EnsureFolder = function()
+		pcall(function()
+			if env.makefolder and env.isfolder and not env.isfolder("InstanceX") then env.makefolder("InstanceX") end
+		end)
+	end
+
+	Main.SavePalette = function()
+		if not (env.writefile and Main.Palette) then return end
+		pcall(function()
+			Main.EnsureFolder()
+			local o = {}
+			for k, v in pairs(Main.Palette) do o[k] = {math.floor(v.R*255+0.5), math.floor(v.G*255+0.5), math.floor(v.B*255+0.5)} end
+			env.writefile(Main.PaletteFile, service.HttpService:JSONEncode(o))
+		end)
+	end
+
+	Main.LoadPalette = function()
+		local ok, res = pcall(function()
+			if env.isfile and env.readfile and env.isfile(Main.PaletteFile) then
+				local d = service.HttpService:JSONDecode(env.readfile(Main.PaletteFile))
+				local p = {}
+				for _, role in ipairs(Main.PaletteRoles) do
+					local v = d[role]
+					if type(v) == "table" and #v >= 3 then p[role] = Color3.fromRGB(v[1], v[2], v[3]) end
+				end
+				return p
+			end
+		end)
+		if ok and type(res) == "table" and next(res) then
+			local base = Main.GetPalette()
+			for k, v in pairs(base) do if not res[k] then res[k] = v end end
+			return res
+		end
+	end
+
+	Main.DefaultOptions = function()
+		return {
+			ButtonAlpha = 0.2, ButtonText = "InstanceX", ButtonSize = "Normal", Corner = 4, ToggleKey = "None", AutoOpen = false,
+			Tool = { scripts = true, sounds = true, anims = true, fx = true, gui = true, attrs = true, other = true },
+		}
+	end
+	Main.Options = Main.DefaultOptions()
+
+	Main.SaveOptions = function()
+		if not env.writefile then return end
+		pcall(function()
+			Main.EnsureFolder()
+			env.writefile(Main.OptionsFile, service.HttpService:JSONEncode(Main.Options))
+		end)
+	end
+
+	Main.LoadOptions = function()
+		local o = Main.DefaultOptions()
+		pcall(function()
+			if env.isfile and env.readfile and env.isfile(Main.OptionsFile) then
+				local d = service.HttpService:JSONDecode(env.readfile(Main.OptionsFile))
+				for k, v in pairs(o) do
+					if k ~= "Tool" and type(d[k]) == type(v) then o[k] = d[k] end
+				end
+				if type(d.Tool) == "table" then
+					for k in pairs(o.Tool) do
+						if type(d.Tool[k]) == "boolean" then o.Tool[k] = d.Tool[k] end
+					end
+				end
+			end
+		end)
+		o.ButtonAlpha = math.clamp(o.ButtonAlpha, 0, 0.8)
+		o.Corner = math.clamp(math.floor(o.Corner), 0, 16)
+		if o.ButtonText == "" then o.ButtonText = "InstanceX" end
+		Main.Options = o
+		local g = (getgenv or function() return _G end)()
+		g.__RPP_ToolOpts = o.Tool
+	end
+
+	Main.ApplyOptions = function()
+		local gui = Main.MainGui
+		if not gui then return end
+		local ob = gui:FindFirstChild("OpenButton")
+		if not ob then return end
+		local o = Main.Options
+		local sizes = { Small = {80, 26, 14}, Normal = {100, 32, 16}, Large = {130, 40, 19} }
+		local s = sizes[o.ButtonSize] or sizes.Normal
+		ob.Size = UDim2.new(0, s[1], 0, s[2])
+		ob.TextSize = s[3]
+		ob.Text = Main.MainGuiOpen and "Close" or o.ButtonText
+		if not Main.MainGuiOpen then ob.BackgroundTransparency = o.ButtonAlpha end
+		for _, d in ipairs(gui:GetDescendants()) do
+			if d:IsA("UICorner") then d.CornerRadius = UDim.new(0, o.Corner) end
+		end
+	end
+
+	Main.RefreshMenu = function()
+		local gui = Main.MainGui
+		if gui then
+			pcall(function()
+				local acc = (Main.Palette and Main.Palette.sel) or Settings.Theme.ListSelection
+				for _, o in ipairs(gui:GetDescendants()) do
+					if o.Name == "Highlight" and o:IsA("Frame") then o.BackgroundColor3 = acc:Lerp(Color3.new(1,1,1), 0.25) end
+				end
+			end)
+			pcall(Main.ApplyOptions)
+		end
+	end
+
+	Main.SetPalette = function(p, noSave)
+		local full = Main.GetPalette()
+		for k, v in pairs(p) do full[k] = v end
+		full = Main.NormalizePalette(full)
+		Main.Palette = full
+		local g = (getgenv or function() return _G end)()
+		local R = g.__RPP
+		local done = false
+		if R and R.RecApply then done = pcall(R.RecApply, full) end
+		if not done and R and R.ApplyTheme then pcall(R.ApplyTheme, {c = full}) end
+		if R and R.CopyApply then pcall(R.CopyApply, full) end
+		if R and R.ToolRefresh then pcall(R.ToolRefresh) end
+		Main.RefreshMenu()
+		if not noSave then Main.SavePalette() end
+	end
+
+	Main.SetGuiHidden = function(hide)
+		Main.GuiHidden = hide and true or false
+		if not Main.MiniGui then
+			local g = Instance.new("ScreenGui")
+			g.ResetOnSpawn = false
+			g.DisplayOrder = 100000
+			g.Enabled = false
+			local b = Instance.new("TextButton")
+			b.Name = "Show"
+			b.Size = UDim2.new(0, 34, 0, 34)
+			b.Position = UDim2.new(0, 6, 0, 6)
+			b.BackgroundColor3 = Settings.Theme.Main1
+			b.BorderSizePixel = 0
+			b.Text = "IX"
+			b.TextColor3 = Settings.Theme.Text
+			b.Font = Enum.Font.SourceSansBold
+			b.TextSize = 16
+			local uc = Instance.new("UICorner")
+			uc.CornerRadius = UDim.new(0, 6)
+			uc.Parent = b
+			b.Parent = g
+			b.MouseButton1Click:Connect(function() Main.SetGuiHidden(false) end)
+			Main.SecureGui(g)
+			Main.MiniGui = g
+		end
+		Main.MiniGui.Enabled = Main.GuiHidden
+		pcall(function()
+			for _, g in ipairs(Main.GetSecureContainer():GetChildren()) do
+				if g ~= Main.MiniGui and g:IsA("ScreenGui") and string.sub(g.Name, 1, 5) == "_DPP_" then g.Enabled = not Main.GuiHidden end
+			end
+		end)
+		pcall(function()
+			local pg = service.Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+			local rg = pg and pg:FindFirstChild("AnimVFXLogger")
+			if rg then rg.Enabled = not Main.GuiHidden end
+		end)
+	end
+
+	Main.BindToggleKey = function()
+		if Main.KeyConn then Main.KeyConn:Disconnect() end
+		Main.KeyConn = service.UserInputService.InputBegan:Connect(function(input, gp)
+			local k = Main.Options.ToggleKey
+			if k == "None" or gp or service.UserInputService:GetFocusedTextBox() then return end
+			if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode.Name == k then
+				Main.SetGuiHidden(not Main.GuiHidden)
+			end
+		end)
+	end
+
 	Main.Init = function()
 		Main.Elevated = pcall(function() local a = game:GetService("CoreGui"):GetFullName() end)
 
@@ -16899,6 +17427,7 @@ Main = (function()
 
 		Main.InitEnv()
 		Main.LoadSettings()
+		Main.LoadOptions()
 		pcall(function()
 			if isfile and readfile and isfile("RecorderPP_DexTheme.json") then
 				local d = game:GetService("HttpService"):JSONDecode(readfile("RecorderPP_DexTheme.json"))
@@ -17023,6 +17552,8 @@ Main = (function()
 
 		Lib.Window.Init()
 		Main.CreateMainGui()
+		Main.ApplyOptions()
+		Main.BindToggleKey()
 		Explorer.Window:Show({Align = "right", Pos = 1, Size = 200, Silent = true})
 		Properties.Window:Show({Align = "right", Pos = 2, Size = 150, Silent = true})
 		pcall(function() Main.CopyWin.GuiElems.Main.Position = UDim2.new(0, 10, 0, 90) end)
@@ -17032,6 +17563,7 @@ Main = (function()
 		genv.__RPP = {
 			Main = Main, Lib = Lib, Explorer = Explorer, Properties = Properties, ModelViewer = ModelViewer, ScriptViewer = ScriptViewer, Console = Console,
 			RecorderWin = Main.RecorderWin, CopyWin = Main.CopyWin, ToolWin = Main.ToolWin,
+			GetTheme = function() return Settings.Theme end, API = API, RMD = RMD,
 			GetSelection = function()
 				local r = {}
 				for _, n in ipairs(selection.List) do if n.Obj then r[#r + 1] = n.Obj end end
@@ -17054,6 +17586,15 @@ Main = (function()
 				local oc = T[k]
 				if typeof(oc) == "Color3" and not map[key(oc)] then map[key(oc)] = nc end
 			end
+			pcall(function()
+				for ctl in pairs(Lib.AnimControls or {}) do
+					for _, f in ipairs({"StartColor", "PressColor", "HoverColor", "OutlineColor"}) do
+						local oc = ctl[f]
+						local n = oc and map[key(oc)]
+						if n then ctl[f] = n end
+					end
+				end
+			end)
 			local roots = {}
 			pcall(function()
 				for _, g in ipairs(Main.GetSecureContainer():GetChildren()) do
@@ -17115,11 +17656,20 @@ Main = (function()
 			run(Main.CopySrc, "Copy")
 			run(Main.RecorderSrc, "Recorder")
 			run(Main.ToolSrc, "ToolCopy")
+			pcall(function()
+				local sp = Main.LoadPalette()
+				if sp then Main.SetPalette(sp, true) end
+			end)
+			pcall(function()
+				if Main.Options.AutoOpen then Main.SetMainGuiOpen(true) end
+			end)
 			finish()
 		end)
 	end
 
 	Main.Uninit = function()
+		if Main.KeyConn then Main.KeyConn:Disconnect() Main.KeyConn = nil end
+		Main.MiniGui = nil
 		Main.MenuApps = {}
 		Main.AppControls = {}
 		Main.Plugins = {}
@@ -17411,9 +17961,15 @@ function K.animName(id)
 	if l == "" then l = "(unnamed)" end
 	return l
 end
+Clip.MAX = 900000
 function Clip.set(text)
 	if not setclip then return false end
-	return (pcall(setclip, Clip.stamp(text)))
+	text = Clip.stamp(text)
+	-- clean characters that crash some clipboards (null bytes, broken utf8)
+	if text:find("\0", 1, true) then text = (text:gsub("[^\1-\255]", "")) end
+	if not utf8.len(text) then text = (text:gsub("[\128-\255]", "?")) end
+	if #text > Clip.MAX then return false, "big" end
+	return (pcall(setclip, text))
 end
 
 function K.g(n)
@@ -19707,8 +20263,10 @@ function Th.apply(name)
 	if not new then return end
 	local function key(c) return string.format("%.4f,%.4f,%.4f", c.R, c.G, c.B) end
 	local map = {}
-	for role, oc in pairs(C) do
-		if new.c[role] then map[key(oc)] = new.c[role] end
+	local ORDER = { "win", "title", "outline", "btn", "sel", "green", "text", "sub", "row1", "row2", "code", "danger", "anim", "vfx", "sfx", "con" }
+	for _, role in ipairs(ORDER) do
+		local oc = C[role]
+		if oc and new.c[role] and not map[key(oc)] then map[key(oc)] = new.c[role] end
 	end
 	local function m(c) return map[key(c)] end
 	local oldFont, oldBold = Th.font, Th.bold
@@ -20470,7 +21028,7 @@ local function openViewer(titleText, variants, startIndex, toolId)
 
 	local dropState = { open = false }
 	local selBtn = K.newButton(bar, "v  Options", C.sel)
-	selBtn.Size = UDim2.new(1, toolId and -350 or -264, 1, 0)
+	selBtn.Size = UDim2.new(1, toolId and -388 or -302, 1, 0)
 	selBtn.TextXAlignment = Enum.TextXAlignment.Left
 	selBtn.TextTruncate = Enum.TextTruncate.AtEnd
 	selBtn.TextSize = 15
@@ -20481,15 +21039,25 @@ local function openViewer(titleText, variants, startIndex, toolId)
 
 	local qualityBtn = K.newButton(bar, "Quality: " .. QUALITY, C.btn)
 	qualityBtn.Size = UDim2.new(0, 120, 1, 0)
-	qualityBtn.Position = UDim2.new(1, -258, 0, 0)
+	qualityBtn.Position = UDim2.new(1, -296, 0, 0)
 
 	local runBtn = K.newButton(bar, "Run", C.green)
 	runBtn.Size = UDim2.new(0, 64, 1, 0)
-	runBtn.Position = UDim2.new(1, -134, 0, 0)
+	runBtn.Position = UDim2.new(1, -172, 0, 0)
 
 	local copyBtn = K.newButton(bar, "Copy", C.sel)
 	copyBtn.Size = UDim2.new(0, 64, 1, 0)
 	copyBtn.Position = UDim2.new(1, -64, 0, 0)
+
+	local dlBtn = K.newButton(bar, "", C.green)
+	dlBtn.Size = UDim2.new(0, 36, 1, 0)
+	dlBtn.Position = UDim2.new(1, -102, 0, 0)
+	if X.addIcon then
+		X.addIcon(copyBtn, "copy", 14)
+		X.addIcon(runBtn, "play", 14)
+		X.addIcon(dlBtn, "download", 18)
+	end
+	if not (writefile and getcustomasset) then dlBtn.Text = "DL" end
 
 	local view = createCodeView(content, UDim2.new(0, 4, 0, 38), UDim2.new(1, -8, 1, -68))
 
@@ -20568,7 +21136,7 @@ local function openViewer(titleText, variants, startIndex, toolId)
 	if toolId then
 		local getBtn = K.newButton(bar, "GET tool", C.green)
 		getBtn.Size = UDim2.new(0, 80, 1, 0)
-		getBtn.Position = UDim2.new(1, -342, 0, 0)
+		getBtn.Position = UDim2.new(1, -380, 0, 0)
 		getBtn.MouseButton1Click:Connect(function()
 			if not current then return K.flash(getBtn, "Wait...") end
 			local base = current
@@ -20742,13 +21310,33 @@ local function openViewer(titleText, variants, startIndex, toolId)
 		K.flash(runBtn, "Ran!")
 	end)
 
+	dlBtn.MouseButton1Click:Connect(function()
+		if not current then return K.flash(dlBtn, "Wait...") end
+		local nm = tostring(titleText or "Code"):gsub("[^%w_%-]+", "_")
+		local var = variants[currentIndex] and variants[currentIndex].name or ""
+		var = tostring(var):gsub("[^%w_%-]+", "_")
+		X.saveScriptFile(Clip.stamp(current), nm .. "_" .. var:sub(1, 24), dlBtn)
+	end)
+
 	copyBtn.MouseButton1Click:Connect(function()
 		if not current then return K.flash(copyBtn, "Wait...") end
-		if Clip.set(current) then
-			K.flash(copyBtn, "Copied!")
-		else
-			status.Text = "No clipboard in this executor - select the text and copy it manually."
-		end
+		local code = current
+		status.Text = "Copying..."
+		task.spawn(function()
+			task.wait()
+			local okCall, copied, why = pcall(Clip.set, code)
+			if okCall and copied then
+				K.flash(copyBtn, "Copied!")
+				status.Text = string.format("Copied %d characters.", #code)
+			elseif okCall and why == "big" then
+				local okW, path = X.writeScriptFile(Clip.stamp(code), tostring(titleText or "Code"):gsub("[^%w_%-]+", "_") .. "_big")
+				status.Text = okW and ("Too big for the clipboard (" .. #code .. " characters). Saved to " .. tostring(path) .. " instead.")
+					or "Too big for the clipboard. Use the download button."
+				K.flash(copyBtn, "Saved")
+			else
+				status.Text = "Copy failed or no clipboard. Use the download button (right next to Run)."
+			end
+		end)
 	end)
 
 	show(currentIndex)
@@ -20846,7 +21434,7 @@ tabLayout.Padding = UDim.new(0, 3)
 tabLayout.Parent = tabBar
 
 local TAB_DEFS = {
-	{ "Anim", "Animations" }, { "VFX", "VFX" }, { "SFX", "SFX" }, { "OBJ", "OBJ" }, { "Search", "Search" }, { "Explorer", "Explorer" }, { "Saved", "Saved" }, { "NPC", "NPC Hit" }, { "Design", "Design Script" },
+	{ "Anim", "Animations" }, { "Movement", "Movement" }, { "VFX", "VFX" }, { "SFX", "SFX" }, { "OBJ", "OBJ" }, { "Search", "Search" }, { "Explorer", "Explorer" }, { "Saved", "Saved" }, { "NPC", "NPC Hit" }, { "Design", "Design Script" },
 	{ "Filters", "Filters" }, { "Settings", "Settings" }, { "Console", "Console" },
 }
 local tabButtons, tabNames = {}, {}
@@ -20861,8 +21449,8 @@ for _, def in ipairs(TAB_DEFS) do
 	pad.Parent = b
 	local hl = Instance.new("Frame")
 	hl.Name = "Hl"
-	hl.Size = UDim2.new(1, 0, 0, 2)
-	hl.Position = UDim2.new(0, 0, 1, -2)
+	hl.Size = UDim2.new(1, 18, 0, 2)
+	hl.Position = UDim2.new(0, -9, 1, -2)
 	hl.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
 	hl.BorderSizePixel = 0
 	hl.Visible = false
@@ -21905,43 +22493,38 @@ do
 		holderPad.Parent = holder
 
 		local cap = Instance.new("TextLabel")
-		cap.Size = UDim2.new(1, 0, 0, 22)
+		cap.Size = UDim2.new(1, 0, 0, 0)
+		cap.AutomaticSize = Enum.AutomaticSize.Y
 		cap.BackgroundTransparency = 1
 		cap.LayoutOrder = 1
-		cap.Text = "Theme - applies instantly and is saved"
+		cap.Text = "Colors and themes for every window are in the InstanceX menu (top center button) > Settings."
 		cap.TextColor3 = C.sub
 		cap.Font = Th.font
 		cap.TextSize = 14
+		cap.TextWrapped = true
 		cap.TextXAlignment = Enum.TextXAlignment.Left
+		cap.TextYAlignment = Enum.TextYAlignment.Top
 		cap.Parent = holder
 
-		local grid = Instance.new("Frame")
-		grid.Size = UDim2.new(1, 0, 0, 0)
-		grid.AutomaticSize = Enum.AutomaticSize.Y
-		grid.BackgroundTransparency = 1
-		grid.LayoutOrder = 2
-		grid.Parent = holder
-		local gridLayout = Instance.new("UIGridLayout")
-		gridLayout.CellSize = UDim2.new(0.5, -3, 0, 34)
-		gridLayout.CellPadding = UDim2.new(0, 6, 0, 6)
-		gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		gridLayout.Parent = grid
-
-		local themeBtns = {}
-		for i, t in ipairs(Th.list) do
-			local b = K.newButton(grid, t.name, C.btn)
-			b.LayoutOrder = i
-			themeBtns[t.name] = b
-			b.MouseButton1Click:Connect(function()
-				Th.apply(t.name)
-				setTab(currentTab)
-				refreshAll()
-				K.syncUI()
-			end)
-		end
-		syncFns[#syncFns + 1] = function()
-			for name, b in pairs(themeBtns) do
-				K.paint(b, name == Th.cur.name and C.sel or C.btn)
+		do
+			local RP = getgenv and getgenv().__RPP
+			if RP then
+				RP.RecApply = function(p)
+					local base = Th.cur
+					local nt = { name = "Custom", font = base.font, bold = base.bold, corner = base.corner, wcorner = base.wcorner, c = {} }
+					for role, col in pairs(C) do nt.c[role] = col end
+					for role, col in pairs(p) do nt.c[role] = col end
+					Th.byName.Custom = nt
+					Th.apply("Custom")
+					for _, o in ipairs(gui:GetDescendants()) do
+						if o.Name == "Hl" and o:IsA("Frame") then o.BackgroundColor3 = nt.c.sel:Lerp(Color3.new(1, 1, 1), 0.25) end
+					end
+					pcall(function()
+						setTab(currentTab)
+						refreshAll()
+						K.syncUI()
+					end)
+				end
 			end
 		end
 
@@ -23323,6 +23906,1607 @@ local function openAnimViewer(id)
 end
 
 X.openAnimViewer = openAnimViewer
+
+;(function()
+-- ===== Instance X additions: icons, movement, save game =====
+local IC = { sheets = {}, pending = {}, loaded = false }
+X.icons = IC
+local ICONS = { copy = 0, download = 1, save = 2, savegame = 3, play = 4, anim = 5, vfx = 6, sfx = 7, obj = 8, search = 9, npc = 10, move = 11, folder = 12, console = 13, settings = 14, convert = 15, check = 16, info = 17, tool = 18, design = 19, original = 20, saved = 2, filters = 14, explorer = 12, client = 4 }
+local ATLAS_COLS = 6
+local ATLAS_B64 = "iVBORw0KGgoAAAANSUhEUgAAAMAAAACACAYAAABdhGZrAAAdHklEQVR42u1dbWxb13l+3kta/kiTMFE2FGndkkMiyXKCsEiANRkKU5FSYIBo0RjiGAMGU6kk" ..
+	"aykCM+6KFl0xUV1bdENTS+ma2JITSduPuQoKUZG3AgllSkDqDlg6SU0tS3RRSk3SH0WCSUsixTLvffeDlxJF8X7fS1HWfQAjCnl5zuXl836ec94XcOHChQsX" ..
+	"uxNkdYDmNzhEhAEG/DonXGBG66UnaMLsnEcvcy0zHiVGNQM18rgfMCFNhF++9jjNmxk3nOQIA6cBhBx63hME9I41UaIS5y+FYCbm+yT78UP7vLfNTAd6lrab" ..
+	"sJkY+4QVdDEQwQbnFggY/HwfdZddAMJJzuglf6EQjDVRwPBcKb6HRJzMk15l/DTtwfDoEXrHIPlHyqR1jhWTcLvnV0LNfNsUgCCAaS9R62xN//S2CsAp7iHG" ..
+	"6VLvMaE3cJ5iRsYTrN6QUfKb/UzLJB+EhL/XIr88fo2UxZmWST5o4J66yvUjMiNWafOrGYH8f7PMqbrrbaHtFABinFR5r8XoeAJ2AFom+aCUxRkwDhiQsgMG" ..
+	"hSBYRsfzSAXOrwc+SUKqLt0e3UY6+FTeM6xYveW++0tNpOl2hd/iA/gQj5OEIDMOSjdNm6cDfBPHATzv5P2qxkhJZqefl5Pzl4LEPFAz334kXdvfutOD4Iqz" ..
+	"AC3j/BiW8T2ICDPjoNXxGKg5eplr3XyH7Y5UtHauLRXMxHxlnRVYVnlv0TEBOHqZa48m+fvhJJ8PJ/m8U+SXGCcNuTq6VBZOHkvyoy5pbSYjIbSy9lGqPt0e" ..
+	"LOO0PSrvDTpnASScZKDaqW8VfosPSMCTDmmN6iwQPTrO3w6/xQdc6tqKsgbHgT6KM6G3UNszsMhAd6CP4o7FAE6SHwB4GY1kt+bfmv04SMs4A+C7Lm/tDUzl" ..
+	"4Lh1rqZ/0HEhyKU6Y7dUDCAAD5XFbDMOtozzYy5n7YccHA/spHs2nAUaa6JTZrIUWtkIvQFv8fxbXCkd8QkzHgVwxaWsY8Gxf//eTx0zs3Kc6eQQSRiAiZSm" ..
+	"BhZYQGvg3OYdCMKu/IkIn3WJWpnBsUPkBwC/PLa6BTh6mWsLA14ljWt3fpmAdxn6iVk8v6F8ucOxhotNwfGxufsvTBghqoP35NeOARzO9ij6j4Tpcs1FwLsu" ..
+	"P8saHEd3TAygRf7wW3xg7BFaQW5B4k6D8ykuVNCdGKclNDKw33EBIIy73KxM+PvULflCh7rnofV5bQugAc+H8mY0RgTGVt4WwVDUBGOP0AoRhsuh/UcbyQ2A" ..
+	"y4NlQUBDOVKjtlmAdUIq+P6SiOPhtzg99ghN2O2vjTbSlZZxBjOOO2EJCHiXfcb2BTmxl2YnzW/hac94CdHZ+7d3+7RpAVCOH1FNS/h25HUeFvfg3bEGet9u" ..
+	"IQi/xdO8jEaBETQSGKsRnwjjruYvE/UZk/v33haphAM0lgWgVF6dgWpRwN9CBMJJNmRB9ECOMcbkf8Y+a2FeF7ZgaL7ugiNBb6aTQ5C0rynO9dsaA7hwoUgm" ..
+	"otZ0rTPkly1Llx3X6LIA+WwPAatG/XECPrDzi+s5LljsKxs59qcG9zyA7mA3Mnd//4RTE8jaP6TDRw8ZsQKKFmA92yPgJSOEJuADCBjafkdU9eSQC1uDXQoZ" ..
+	"XOxyRPubuVbRAuSzPa89QvMAvrWdj3isiRLhcW5lxoBOIRwaa6TBct6jpZXpHTp/uYJdJe3PAgIAQBIyZq2AoGxJ1rM9wXCK79luPTPWSINEaNVF/iaKwkU5" ..
+	"gt1QOTI9pTQ6E3oD52ghcI4WmNBr1gp4C/zssmd7zAhBOLdOMGA3+Ymg28I48iNv8/xGg91yLW6V0v4MLGM/4usv7EecVxClwp0JOq3AjssCKVkCq5pfr4Wx" ..
+	"BYzJSpvfQLBb1pVdBU0eD/TQuuWR/46bsQJCAYFWjceZ9mZ7zJLVLrenjCSMV+L8SkFuOYPdTdr/GQ6Ct2j/xUAf9RRfG+ijni2H4hmhzDMc1GcBdli2J08W" ..
+	"u31+R0nImCTgmFpZyO2evxgHqm4LCQIaDlTdFtqOqnBbqkAIyvvJit9TqyDhwoULFy5cuHDhwoWL3QnF1cLaEfYDwPwxWtAzkNHrtVCf4HYi/ADA3RaH+gDA" ..
+	"N6620MtGP7jYyc2Q0CjBwBliwgcsYOjPXjLXoyCP8Ft8AP+HZpIQtOuIKgEfsAdXxhroktkxIin2iRK6wIjkq3wTsMCEwUuNxuvz241gJuZbvflRF5giDJbv" ..
+	"jxYYPJiuvdC9NW5WgEdAyCPob9Rg9Ho13PeffAcIP7GB/ECOPC/WJvh2Ix/KtHNUkhDWTX7CKgirYFSTpFzCW3f2YwlhSGi083w2A9UQEW5O8lNmx8iKiDMj" ..
+	"VljingE/GPHmJPdstwCs3vxYvj8uuD/2A4jXptt7dAsAMY4Q6y+jbfR6Ney/gc8TsEfjx/wPr4DPClkcBOPnGkNWVbH+02uZdo6CoL+WKGG1yoPnqzx4Pi8E" ..
+	"lrU14YtOkcRiEbKTKhamZbsFgJlPqpCmRbcAgBACGdDoRq9XgaRD63my6JwJ03tv/xW9C8YpO8a0Qv7PvJjrRiMw7Nl+7GDpFotWxacyrh/bD5X74y33t74X" ..
+	"qDbB93oIf0GMJgaaIH+Zw6P8BwBvMpD0eJB8u5l+Z+Z6gyrqbtsfi44xrZD/vWf4YDaLM4biBRfbDm9F3pWEu7V2KUke9D34M+6QBBAIfbrGVMHvTnEY7JJf" ..
+	"B9TK4SxW8v0Rb72/dQGYj9AfALwq/8PhUc4AwNWW0s3sjF5vyEQT7iFtAv6l5IXuJngsqJt9D+NxCUCgz9ju1p1Cftt27TJ6QAqbzNh4fX49qJlv60KuGrRP" ..
+	"xcQfS9f2JZDrH9ClwKtB/TEAYwKMCQMPxtj16rjL7odIrD6mWQLvNrfn0hMUB9BbpO0XweiW37OZ/O0DyG3e82kQ8CQApGsvxImot1Dby393p2svxHW7QEyl" ..
+	"t8wq5fuNXq+h3e9WCbTeJsbLEiG5Zx8WAODmJ/ALjCYAbSA8oPB99AXBHfq63+QtxW70+S812VefX5v8HNWpgSM1821d6doL3fM1/brvT1EARKm0Ni/I9Q9a" ..
+	"uV7Dmty9ZYmOcQOE52b/B+fRTcXFMa4CuPrkMP/L1Sp0EuFHAKq2jOk0cmsB02DjW8tdWCH/OuI18+1BYh6cr7swakkAlDR2Qa5/0Mr1hiwA4waAv7zaQikA" ..
+	"ePg877nxaYQkxoMAIBDerr4DqVcbKAvgJ/WjfI2An28SAnJWABh4dx/j+XvP00o5iULAB4KAcfYgnW8M3jLJB0lEjWTDQlqplV8d92RpZbgu3R6VuCT5hwrL" ..
+	"rsjXDRRbAiZEaubbB/V0sfSaeOIhR6/PobrogcZ+E8mR/9AIf+kTwisA7ssf+2YA7y/jev1r/PTsUXpztoUu14/y1wj4sdKYthPRi7F7X6SVTAdHZBcp4TT5" ..
+	"PQKGE4/TlkK/siC8A2A8cpkbRQnHzc6RFREHSndmV1EG+ZXhu2R3yRAkpiVsXU7RQf5NdxGtmW+HlhBoCsC2rA8UuEAMvH11KpfmPDTCXxIIb4Cwt4Sg3U8S" ..
+	"kodHufFqC/3i8A28NFuFThAOl8MFCrxI07KwjgBAppNbA+ecq0wh7MF3E7LGb07yaQBRbDTbnhaAnteaaCjxOI0fvcxWysGb3tYhrwwbFgA5m0MaFkLH+WmO" ..
+	"1sy3RdWyRhV5JpgKtLXAuIBukh4+z3sEwisy+dcAfCPL+EyW8RkGvglgTX7vlSMp9r56nEQGXi41Zlm+g4SBTCeHnBjbI2B49Ai9E0mxrznJU3LqL1hwSVAC" ..
+	"BpuTPBVJse+1xy1tzPNZcAv9dn93/eTXB00LUO71gS8O8/4PCfvWzSGQBIAbn0YIwH3yg/2H2Rb654KP/VP9KIOAHwCo+eOHOAJgXPLgDY+0LgH7vjjM+//r" ..
+	"OK2WUQhGMs9wQ9462OXz592erIiUTPxFAmIeT67JiCgiyLJQyNd84VYIjHWQf0ggmtASkFxVi74EYKYqhMPrAx97ijT1Gn4PAMwbGk7K4l+3qsWN88kkX8vi" ..
+	"5pW/1f1lyAQVaU/KIqV1MNuQ6yPkmnuExzmWJ7/Xg+BYEyUSDbSQaKCFsSZKeD259wAEw+OGsyk7kvzp2gvRuZr+QYGoVZ38G1UtjJdHL8r3a+X5ldYHFAOg" ..
+	"KlQXVgAWq3K+IBOkvFPInq3+4R6GJ7shdJz/rPdmwVgSqgG8t01CYIslYA/SskI4mU8QJBo2SoTkkWigpXCSYwyMMOM04MwqbYWQP6f2ZMgE1/V9DVsAUcJE" ..
+	"Yc5f6xxA8fXaaYfNK7Ye5NqnCsCv118j/E3xx26KG6+xgBkA8Ir43CbySGW3AIVCMJCJsc/qQPlUZ97n93iUn23eJSqKD25B8q9nfQzHBoYtQLGm18rzGz4h" ..
+	"5kF1YQaMgCcAzFbfgdT7y7gOwv0EfKd+lCEy/i0vEAR0y/HB/J/ejslrAAQRX95kK9R2hOb28euugl24YkysqzxMkFaQysS4obCoU5lQ8eVBaubbSm4jl0oU" ..
+	"t867OCXWAHSlPi1ZgBLEse0cQM5kbNmz0/bkMHsmGyjLAp6WF8WqCPiBl/Cel/CeHPxWgXGDJDw92UDZJ4fZQ4SvbH6aKlssBLwkkMFCX4RVYgz5+3V3nskL" ..
+	"gWlL0DLJ+YbiM3LAq2x9RVnzc/k6cDqNvA+v7OtztGa+LW7ZAhx6jSMCb9Tkv9qSW3Yykuc/PJoTX4lw7NpRfQtDLKCaNpPsgatV6ATwk9mj9ObhUW4E8Aog" ..
+	"l2/fSLnNE+Ppq8dyZLxWha8CqC8eW2le+QxvOapgB2kVIwAa1C7S2r1JhEFmnAVwNpLiieI4IJJinyjiLACQYN7/L64yrdVvwEJVas2uo8UB7FxN/2Bdur2E" ..
+	"JcBp6Kx+V9IC1Cb4dmK8YFvqjvGC7jO5JRasiPCjQ69xoyyIv7jnDhyWGE8w4wwzzkiEpj+5Aw/kyX8owU0S4Yd6xt4WMEKLp6zlsscaqQfADAN+UcRU+DK3" ..
+	"RFLsj6TYH77MLaKIqXwe3iMggQqHICBSar9+XjiUCvIqWALdFraktNYn+CwRYsz478NrePTV4yQqDaCa5+9iof4LeJMIjzKjZzZCz2ndUP0o9xPQVuKtNQa+" ..
+	"dvgGXlK6nyeH2XOtCl+VCD8sdaaYgQuzLdTu5A+p1ce2KEPWGzif2ypQqjq3Ypgkb4GIpNiXFTEB7TO+014PGkpli4zCQQtgawyRrr2g6z62WIAHR/hhEJ5l" ..
+	"RpaBU2rkl1mlnOfvJsnDOMXATRCefXCEHzZjAWRUEfDj2SrM1Cf4uboxfqB+mD9VP8yfqhvjB+oTfGZ2L37NhF7FA/WVYgGshkkSjh+9zLWJBlq61ERBuZbo" ..
+	"zLorwZgkQqvXg7vk14NZEalIynoW6laDt1iDXhVwngAPAz+8FqEpHVpMNc//9jF6uz7BvUT4O1HA+SeH+c81hKpaw2YdJuBHHgnI7wjySFDZObLps9siAAwM" ..
+	"BfrsbdrBEs40v87Dl75M43I3nJJ+fiTFIdlK5IXAFktwywTVhf8zuxfPEvAwGL/HGrp1aiPNPP9+AV3MyBDw8OxePKsx5F0OMvHuSiW/qfL0Ao4fTfL3m1/n" ..
+	"xmNJrinMFDW/zo0t4/xYooGWvB6EXEugYQEOj/BBAN+Rf43P0V58eHhUf4UPtWs/YaDAM/zO4RH+2dVj9I4CEd536ssS4Y+Vqvklwjgxmk3MUU0Cjmex0cVH" ..
+	"ugmQAEgMtIwzEg10xUZLUOmH4qESTKtYAMILAG4vw/3dLs9V2qII+DoYVx1g41WW8PVKdXsuNdIYA5ftbDpCwKoou5RFloAsfLGIAtEXwYhWAvnJs/33sWuR" ..
+	"6eBIprNyN59FUuxzXSAXLly4cOHChYtdDXIfgey7d3KIJAxg4xjfAgtoVeozm98NqlVJTu91SqiZ74gA0ojS+/kVz7pr7dG5Q862L61PtwdF8ElICDLBh4Iz" ..
+	"yMRYYsKEl2jUTDM9M9UnTJB9S7UKwaW+/HA2kx8A/PJrOwKSwI/WXWt3JPium+84WTvfnskyTzEjxrndv8GCS4Lya/Es81TtfHumbr7D0GH6Un0H7EapPgbr" ..
+	"6wD8xokQiItJUIwlEPVQ48XuW1AG/DpfMwSzmn9Dw/cl6tLtrXoOhchCALssQV2m0883sgMSpJAxorGfwYO1c21R2uttnQucW9DxsZPl+qELq1UUrANokh8A" ..
+	"fGCOc/LEAFyUDXM1/YPEeE7PtXZZgrrrbSFpLTvFFs56MCEkrWWn6tPtQR2X+8r1PAutjNectuMoJ0+Ami7a1tC5VG8n+yVfuVeUv8/eXYxGYwqtZ7Oy9pFu" ..
+	"DWnVEtRdbwtJElI2PQpflnmqPt3+BVsbbTMmvd7cglc2i0GQue5EFmIAjtppCUr1drJf8pV7RVVqTCGTXy5/QjMeFr7hpCWoy3T6JQkjdj+PLHOqLtNp22/r" ..
+	"9SKar4KRFwRT49iVReLxE11gjukwZQtgaqUnLm7ShPneTl4iezVFURYjyzwl94qKbbophX38FiyD5ZiimPwHqm4LTQd6lurS7asS8ws6hcCQJeAb2QGQI+6I" ..
+	"j29kB6BxEs4AluwYxIIFoCFquhgFAE6eGABzXKcf55fjjZI+YDH5g5mYL5iJ2fKD5Md20srY6RKWIr8cE/wYEI7l/gEP/PaZg3ZYgrp0e5TtPN9dIibIpXVt" ..
+	"sCgiRvIn4LKi+WzdugWgpp+a0nQ5N8jw3he/QRIgmIk15AngUGC0TEW7HFlld6NWdsdKTKGo+a+1Pwag5rY7afhX9+YqmwFA9ubacTVVptcSMCt0frE1DuOz" ..
+	"gC1HNENZERnLrpRpwqSiPoifnDVBfqOPjAB+aGXto5SjQiAgwhIGCfj8OvmF8u8qVCO/JOTcxI8/RE1duv2KLKWPSWDNuqdaQiC7h3ZYxnwJljuV4rD6dHvQ" ..
+	"KTfXtADoXAfYgOh8ic3pQM9SMBMLrax9PAFw0EkhkLMzmt9db3bHTEyhh/wAIIGrwQgb/Y5qQiDCFmFf9hKF5KB3QkkIsswRwFypluIzx5EU++3JAhkhfxkx" ..
+	"HehZOlB1WwigGQB5IfBt1/04tWKsl/xWoRgTSJbrly57iUIFml3xhBSxfXGG1SyQYDZDcasKQaaDz2v0CdOV3eES1diUYopykX+zEHwlXBSg3mkH+WVXKqWW" ..
+	"ELEyV3OSubgyRaLBYPVBe7JAu9sS6IopCgivFFOUm/wbQkDND/+ho7DBn5YFWEbpEouGyK9zrvLHADsHeenfnvozerM7emOKgkC/4LtVHJR8ezPktwOLCgJ6" ..
+	"p3E9tUOglhffyVCybHOH+q8IEg05Na8g0dCv7u0raOhHM2paB8ito8iCsGyN/KpzaZO/1Nlj5bPKO98CVBL5jWZ39JwHUMl2Xam71g67XSFBoqG5Q/1XNgem" ..
+	"vMTKts2XZU7Vp9sbZMKH8gJhRvMTs+nf7lITlbSql57IWVytynU7zgLcqpp/uyxBKfLn3tBs3pEXguBsTf+0FbeHyUC/iN0cA+ghv1Jd+Tz01ojU/eMZXDE2" ..
+	"KgR6LAEx3iXmHGEF4VE9C2Gq5AfgAQaz2u1Q1y2BHA+Y8vm9ZL6FrFENfwvEAEQVpfl1ZnecsgQC0S/n6y7849yhl8fmDr08Nlfb/y0BubZJZsmfd2d0FpTy" ..
+	"ZZlTZslPjEWFVeByNvFY3BEWIK8R83+XQ8Pbm92x3xIAyJWA/+2pp0SRb6Rr+xJeT9Xwmrj2bbPkXyenQHHW14LUdKaHSYgpmNYekPN7keS5BivRAiwDuT0p" ..
+	"xWSwS/PnxzZSOq/SYgIAqLve8U1RFC/mD8v/5r4X37FKfmD95NmkU9+JGJNyE+xSQWwcQC+cLa+4CEa3PFfFWYAeAF1Z5qma+TZHJsjK7iOT9Y6JVqs9mLUE" ..
+	"ddc7XpUk6XtWfX5Fku71RnktOw1YWhkuqeBorzeqkeGJQaGzvJrvT4RWuUL2zo0B0rUX4kTU66R2lsfuTtdeiO/U7JCT5AeAucC5BUFAxPZsC1FI5+F4oxGi" ..
+	"afIXW4BlB6Re6bZLkny+pl9RA+xmTAd6lmrm26eg3QnGEvnXheD+CxN119saJAkJGzhRvEmuYsi/2QIwRZSIaTv52a3eawS5/rf6zl1YJX+hEAhV3qCVmIAY" ..
+	"k0KVN1ip5N9kAeQzun6XbpUFuVF0Wclf6A4BCNWl26MscZwpd1hIj6vJJMTm60oHvJVC/koLgl2UgMS0pLK1vuCH9AzPHjp/xYl7kLszDsorvxFihJjIB7Ds" ..
+	"ktGMvJViwkuUmK117rSXneR34WLHIJzkSDjJEfdJuHDhwoULFy5cWI8p7BqIUyf8kPg0OF86mwbtrB2aibFPWEELCCG5zHUQG3tSpokwDcaEdACjgR57++BG" ..
+	"UuwTGUfACDEjSIC/uIw3AQsMLBBhGoQJD2HS7ce7SwSAx586Cy61gGVdCGTin2YgrvMjSwT0SAfQa1UQIin2iyK62GTJEAIGPR50Wzm07aLCBYCTT01B6ZAz" ..
+	"USs1Xhw0Tf5OjpKEszC3+3CJgdZAn7m9581vcAiEEVg/47rk9aAh0aB54MTFNkCwSP4ep8i/2MFn5Xo7ZgnoI2DEbMtSIktzb7oPUbS/2rKLbRYATv11EEon" ..
+	"iKxq/g6Os8KeIAYmWUCABQQY2sv0JGEg08Exw9/PzvjI7cV2C1oAUYw65vZA5WCEgGjgHC0EztGC3pNYBJzNdHLIyH14PYjAnlNKy/JYLm4xF6hkLUY18vP4" ..
+	"CdWmGpkY+2SfXxn71OvCK1kIkjCSienvkJ5ooGmvB0ECTB9IJ2DI60HQ9f8rF1b2AgUNuQHjJ6KQj9sptldaRVzL76ZVjGQ6uRUAiEvU5JQtRN6aQFovoe3D" ..
+	"CmLQmU2KpDhP3GgkxTFRRIiBEBhBuYFE8dbkGTCWQJgmYMLjwUQ+DVowlotbSABMkV9+JQqgdYv2X9mIKRiYXHdxcmXLj8hvhIhV6sKrWAgCTmdi3KMnPZoV" ..
+	"MRVO8qDHg16ZvAkYrGsfSXFQFHE6KyIKNw645QRgBjoOaGwl//pnN+OTIj9ZWZPDgoUwZAUYiGZFRMNJXgAwQcAEC1jwEBaLc/uRFPtFxudZQpBy1jGUFd3t" ..
+	"5beyAEyUEgBOPrV5727po5wTW16Rikpm7zPZA0rDQlAucxU3NiT8AKIMRCEBWQDNSS62GIXXu7j1g2Ayf1TOQz0lXvWX0OT+TCf7S/r65uEzuzbgYpdbAE5F" ..
+	"fcAnPojostAaqZcaLi6U0MwPGdHkVkASugDrlSFc7CILwOMnuiCu/i9Ezlgg/ww1/TSmpJnL+L39mc7K7xTpokIEoKANqhX0UtNPgxX0zbUEzs4CAYsu1Xao" ..
+	"AOhug0rCc8hV9irM8MwA6IWHAiqaPx84zpTrSzOwGHhRPS/vrgS7MYAB8lMrNf67VZ96GgVxgOI6gNr9EkbhQTzwIk1nOjgCIFbyczq2UCQaaFrO48cZMFWf" ..
+	"n4Ahjwdxdzt05YIskx8APBQoFdgagbz1eT3bwwICBesAftJYB2BgKNBH0VLjQkIUgB+E6byAaN1P4eptJMU+dyV4F1kA493f9y1ZvpN9SPAKetZr7xtdBxBK" ..
+	"5/YD52gQJjI+7krwLrUAhslvcffnJm3dwfH1naCECSZsrOhq9JbV27xOLwqLsRKwABMrwYXHJosbPLuoQAHYTvIDuf1AWMECmahHWegy2S0AdsAVgArPAvEb" ..
+	"J+LbSX4AkDepRU1JstY2ahculASAU1EfiLu2k/zrQtBHCRZg5iB9xOihFxcujO8FcpD8hYErA88Z/iC7pdVdmBAAahhcAlFrJZC/wBL0sIAGNrIYxbZup3BX" ..
+	"gneTBaDGi4OqQlBG8hdYggkcgJ+Bbp2CYFsQ7K4E70IXSFEItoH8hYFxoI/iugTBix675nXPBO8OlEzNbTrFtY3kV4K8uhsn5Bo25Hv1yi1MbYfVlWAXOxCc" ..
+	"ivpy+/8rF5lnOOhua3bhwoULk/h/I6KPkymeOjEAAAAASUVORK5CYII="
+
+local function b64decode(data)
+	local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	local map = {}
+	for i = 1, 64 do map[chars:byte(i)] = i - 1 end
+	local out, n, buf, bits = {}, 0, 0, 0
+	for i = 1, #data do
+		local v = map[data:byte(i)]
+		if v then
+			buf = buf * 64 + v
+			bits = bits + 6
+			if bits >= 8 then
+				bits = bits - 8
+				local p = 2 ^ bits
+				n = n + 1
+				out[n] = string.char(math.floor(buf / p))
+				buf = buf % p
+			end
+		end
+	end
+	return table.concat(out)
+end
+
+local function applyIcon(btn, key, size)
+	local idx = ICONS[key]
+	local sheet = IC.sheets[1]
+	if not idx or not sheet or not btn or not btn.Parent then return end
+	if btn:FindFirstChild("IxIcon") then return end
+	local img = Instance.new("ImageLabel")
+	img.Name = "IxIcon"
+	img.BackgroundTransparency = 1
+	img.Image = sheet
+	img.ImageRectOffset = Vector2.new((idx % ATLAS_COLS) * 32, math.floor(idx / ATLAS_COLS) * 32)
+	img.ImageRectSize = Vector2.new(32, 32)
+	img.Size = UDim2.fromOffset(size, size)
+	img.AnchorPoint = Vector2.new(0, 0.5)
+	img.ZIndex = btn.ZIndex + 1
+	img.Parent = btn
+	local pad = btn:FindFirstChildOfClass("UIPadding")
+	if not pad then
+		pad = Instance.new("UIPadding")
+		pad.Parent = btn
+	end
+	local newPad = pad.PaddingLeft.Offset + size + 5
+	pad.PaddingLeft = UDim.new(0, newPad)
+	-- UIPadding also moves the children, so cancel it: the icon sits 4px from the real left edge
+	img.Position = UDim2.new(0, 4 - newPad, 0.5, 0)
+	local hl = btn:FindFirstChild("Hl")
+	if hl and hl:IsA("GuiObject") then
+		hl.Position = UDim2.new(0, -newPad, hl.Position.Y.Scale, hl.Position.Y.Offset)
+		hl.Size = UDim2.new(1, newPad + pad.PaddingRight.Offset, hl.Size.Y.Scale, hl.Size.Y.Offset)
+	end
+end
+
+-- X.addIcon(button, "copy", 16): small icon on the left of a button.
+-- The icons are built into the script (no extra files to download).
+function X.addIcon(btn, key, size)
+	size = size or 16
+	if IC.sheets[1] then
+		applyIcon(btn, key, size)
+	else
+		IC.pending[#IC.pending + 1] = { btn, key, size }
+	end
+end
+
+task.spawn(function()
+	if not (writefile and isfile and getcustomasset) then return end
+	pcall(function()
+		if makefolder and not (isfolder and isfolder("InstanceX")) then makefolder("InstanceX") end
+	end)
+	local path = "InstanceX/icons_v1.png"
+	if not isfile(path) then
+		local okD, data = pcall(b64decode, ATLAS_B64)
+		if okD and #data > 100 then pcall(writefile, path, data) end
+	end
+	if isfile(path) then
+		local ok, asset = pcall(getcustomasset, path)
+		if ok and asset then IC.sheets[1] = asset end
+	end
+	IC.loaded = true
+	for _, p in ipairs(IC.pending) do pcall(applyIcon, p[1], p[2], p[3]) end
+	IC.pending = {}
+end)
+
+-- tab icons
+for name, key in pairs({ Anim = "anim", VFX = "vfx", SFX = "sfx", OBJ = "obj", Search = "search", Saved = "saved", NPC = "npc", Design = "design", Filters = "filters", Settings = "settings", Console = "console", Explorer = "explorer" }) do
+	if tabButtons[name] then X.addIcon(tabButtons[name], key, 14) end
+end
+
+-- ===== file helpers =====
+function X.writeScriptFile(code, nm, dir)
+	if not writefile then return false, "this executor cannot write files" end
+	nm = tostring(nm or "Script"):gsub("[^%w%-_ %.]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+	nm = nm:gsub("%.lua$", ""):gsub("%.txt$", "")
+	if nm == "" then nm = "Script" end
+	dir = dir or "RecorderPP_Scripts"
+	pcall(function()
+		if makefolder and not (isfolder and isfolder(dir)) then makefolder(dir) end
+	end)
+	local path = dir .. "/" .. nm .. ".lua"
+	if isfile then
+		local n = 1
+		while isfile(path) and n < 500 do
+			n = n + 1
+			path = dir .. "/" .. nm .. " (" .. n .. ").lua"
+		end
+	end
+	local ok, err = pcall(writefile, path, code)
+	if ok then return true, path end
+	return false, tostring(err)
+end
+
+-- ===== movement =====
+local MV = {}
+X.mv = MV
+local LOCO = { "idle", "walk", "run", "jump", "fall", "climb", "swim", "swimidle", "sit" }
+local LOCO_SET = {}
+for _, n in ipairs(LOCO) do LOCO_SET[n] = true end
+local LOCO_WORDS = {
+	{ "swimidle", "swimidle" }, { "swim", "swim" }, { "idle", "idle" }, { "walk", "walk" }, { "sprint", "run" },
+	{ "run", "run" }, { "jump", "jump" }, { "fall", "fall" }, { "climb", "climb" }, { "sit", "sit" },
+}
+
+local function numOf(id)
+	return tostring(id or ""):match("%d+")
+end
+
+local function hasAny(s, list)
+	for _, w in ipairs(list) do
+		if s:find(w, 1, true) then return true end
+	end
+	return false
+end
+
+-- returns "loco", slot  /  "auto", "wall"|"edge"  /  "tool"  /  nil
+local function classify(name)
+	local n = tostring(name or ""):lower()
+	if n == "" then return nil end
+	local okc, cat = pcall(K.animCat, { id = "", name = n, path = n })
+	if not okc then cat = "Other" end
+	if cat == "Hits" or cat == "Emotes" or cat == "Cutscenes" then return nil end
+	if cat == "Attacks" or cat == "Movesets" or cat == "Block" then return "tool" end
+	if n:find("wall", 1, true) and hasAny(n, { "climb", "run", "hang", "walk", "slide", "cling", "grab", "jump" }) then return "auto", "wall" end
+	if hasAny(n, { "ledge", "edge", "mantle", "vault", "pullup", "pull up", "pull_up", "climbup", "climb up", "climb_up" }) then return "auto", "edge" end
+	for _, w in ipairs(LOCO_WORDS) do
+		if n:find(w[1], 1, true) then return "loco", w[2] end
+	end
+	if cat == "Movement" then return "tool" end
+	return nil
+end
+
+function MV.scan()
+	local res = { loco = {}, auto = {}, tools = {} }
+	local seenAuto, seenTool = {}, {}
+	local char = lp.Character
+	local function addLoco(slot, id, name, src)
+		local n = numOf(id)
+		if not n or n == "0" or res.loco[slot] then return end
+		res.loco[slot] = { id = id, name = name, src = src }
+	end
+	local function addAuto(kind, id, name, src)
+		local n = numOf(id)
+		if not n or n == "0" or seenAuto[n] then return end
+		seenAuto[n] = true
+		res.auto[#res.auto + 1] = { kind = kind, id = id, name = name, src = src }
+	end
+	local function addTool(id, name, src)
+		local n = numOf(id)
+		if not n or n == "0" or seenTool[n] then return end
+		seenTool[n] = true
+		res.tools[#res.tools + 1] = { id = id, name = name, src = src }
+	end
+	local function route(id, name, src)
+		local group, slot = classify(name)
+		if group == "loco" then addLoco(slot, id, name, src)
+		elseif group == "auto" then addAuto(slot, id, name, src)
+		elseif group == "tool" then addTool(id, name, src) end
+	end
+
+	-- 1. the Animate script (run, walk, idle, jump, fall, climb, ...)
+	local animate = char and char:FindFirstChild("Animate")
+	if animate then
+		for _, folder in ipairs(animate:GetChildren()) do
+			local slot = folder.Name:lower()
+			if LOCO_SET[slot] then
+				for _, a in ipairs(folder:GetChildren()) do
+					if a:IsA("Animation") and a.AnimationId ~= "" then
+						addLoco(slot, a.AnimationId, folder.Name, "Animate")
+						break
+					end
+				end
+			end
+		end
+	end
+	-- 2. tracks playing right now
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local animator = hum and hum:FindFirstChildOfClass("Animator")
+	if animator then
+		for _, tr in ipairs(animator:GetPlayingAnimationTracks()) do
+			if tr.Animation then route(tr.Animation.AnimationId, tr.Name, "playing") end
+		end
+	end
+	-- 3. what the recorder logged from your character
+	for id, lbl in pairs(animLabel) do
+		local tn, owner = tostring(lbl):match("^(.-) / (.+)$")
+		if tn and owner and (owner == lp.Name or (char and owner == char.Name)) then route(id, tn, "recorder") end
+	end
+	-- 4. animations inside your tools
+	local function fromTools(container)
+		if not container then return end
+		for _, t in ipairs(container:GetChildren()) do
+			if t:IsA("Tool") then
+				for _, a in ipairs(t:GetDescendants()) do
+					if a:IsA("Animation") and a.AnimationId ~= "" then
+						addTool(a.AnimationId, (a.Name == "Animation" or a.Name == t.Name) and t.Name or (t.Name .. " " .. a.Name), "tool")
+					end
+				end
+			end
+		end
+	end
+	fromTools(lp:FindFirstChildOfClass("Backpack"))
+	fromTools(char)
+	-- 5. Animation objects stored in the game (wall climb, edge climb, dash, ...)
+	local boxes = { game:GetService("ReplicatedStorage"), game:GetService("StarterPlayer"), lp:FindFirstChild("PlayerScripts"), char }
+	local count = 0
+	for _, box in ipairs(boxes) do
+		local okd, list = pcall(function() return box:GetDescendants() end)
+		if okd then
+			for _, a in ipairs(list) do
+				count = count + 1
+				if count % 2500 == 0 then task.wait() end
+				if a:IsA("Animation") and a.AnimationId ~= "" then route(a.AnimationId, a.Name, "game") end
+			end
+		end
+	end
+	return res
+end
+
+local function cleanName(s)
+	s = tostring(s or "Move"):gsub("[^%w _%-]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if s == "" then s = "Move" end
+	return s:sub(1, 30)
+end
+
+function MV.idsOnly(scan)
+	local L = { "-- Instance X | Movement animation ids on your character", "" }
+	local function add(s) L[#L + 1] = s end
+	add("-- Automatic movement (no button needed)")
+	for _, slot in ipairs(LOCO) do
+		local e = scan.loco[slot]
+		if e then add(string.format("--   %-10s %s", slot, e.id)) end
+	end
+	for _, e in ipairs(scan.auto) do
+		add(string.format("--   %-10s %s   (%s)", e.kind == "wall" and "wall climb" or "edge climb", e.id, e.name))
+	end
+	add("")
+	add("-- Tools / moves")
+	for _, e in ipairs(scan.tools) do add(string.format("--   %-18s %s", cleanName(e.name), e.id)) end
+	add("")
+	add("local IDS = {")
+	for _, slot in ipairs(LOCO) do
+		local e = scan.loco[slot]
+		if e then add(string.format("\t%s = %q,", slot, tostring(e.id))) end
+	end
+	for _, e in ipairs(scan.auto) do add(string.format("\t[%q] = %q,", cleanName(e.name), tostring(e.id))) end
+	for _, e in ipairs(scan.tools) do add(string.format("\t[%q] = %q,", cleanName(e.name), tostring(e.id))) end
+	add("}")
+	add("return IDS")
+	return table.concat(L, "\n")
+end
+
+local MV_RUNTIME = [===[
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local lp = Players.LocalPlayer
+local env = (getgenv and getgenv()) or _G
+if env.StopInstanceXMovement then pcall(env.StopInstanceXMovement) end
+
+-- absolute time of every frame
+for _, a in pairs(ANIMS) do
+	local t = 0
+	a.times = {}
+	for i, f in ipairs(a.frames) do
+		t = t + f[1]
+		a.times[i] = t
+	end
+	a.len = math.max(a.times[#a.times] or 0, 0.05)
+end
+
+local conns, alive = {}, true
+local char, hum, root, animate
+local motors = {}
+local take = false
+local cur, shot
+local pose = {}
+local blendFrom, blendT = nil, 1
+local lastEdge = 0
+
+local function sample(a, t, out)
+	local fr, times = a.frames, a.times
+	local n = #fr
+	if n == 0 then return end
+	if t >= times[n] then
+		for k, v in pairs(fr[n][2]) do out[k] = v end
+		return
+	end
+	local i = 1
+	while i < n and times[i + 1] <= t do i = i + 1 end
+	local f1, f2 = fr[i], fr[i + 1]
+	if not f2 or not SMOOTH then
+		for k, v in pairs(f1[2]) do out[k] = v end
+		return
+	end
+	local span = math.max(times[i + 1] - times[i], 1e-6)
+	local al = math.clamp((t - times[i]) / span, 0, 1)
+	for k, v in pairs(f2[2]) do
+		local from = f1[2][k]
+		out[k] = from and from:Lerp(v, al) or v
+	end
+end
+
+local function speedOf()
+	local v = root.AssemblyLinearVelocity
+	return Vector3.new(v.X, 0, v.Z).Magnitude
+end
+
+local function rayParams()
+	local p = RaycastParams.new()
+	p.FilterDescendantsInstances = { char }
+	p.FilterType = Enum.RaycastFilterType.Exclude
+	return p
+end
+
+local function wallHit()
+	local md = hum.MoveDirection
+	if md.Magnitude < 0.1 then return false end
+	local r = workspace:Raycast(root.Position, md.Unit * 2.6, rayParams())
+	return r ~= nil and math.abs(r.Normal.Y) < 0.35
+end
+
+local function edgeCheck()
+	local md = hum.MoveDirection
+	if md.Magnitude < 0.1 then return false end
+	local dir = md.Unit
+	local params = rayParams()
+	local base = root.Position
+	local wall = workspace:Raycast(base, dir * 2.4, params)
+	if not wall or math.abs(wall.Normal.Y) > 0.35 then return false end
+	local top = base + Vector3.new(0, 3.4, 0)
+	if workspace:Raycast(top, dir * 2.4, params) then return false end
+	local down = workspace:Raycast(top + dir * 1.8, Vector3.new(0, -4.2, 0), params)
+	return down ~= nil and down.Position.Y > base.Y - 0.5
+end
+
+local S = Enum.HumanoidStateType
+local function pick()
+	local st = hum:GetState()
+	if st == S.Dead or st == S.Physics or st == S.Ragdoll or st == S.FallingDown or st == S.PlatformStanding or st == S.GettingUp then
+		return nil
+	end
+	if st == S.Seated then
+		if SLOTS.sit then return SLOTS.sit, true end
+		return nil
+	end
+	if st == S.Swimming then
+		if speedOf() > 1 and SLOTS.swim then return SLOTS.swim, true end
+		if SLOTS.swimidle then return SLOTS.swimidle, true end
+		return nil
+	end
+	if st == S.Climbing then
+		if SLOTS.climb then return SLOTS.climb, true end
+		return nil
+	end
+	if st == S.Freefall or st == S.Jumping then
+		if AUTO_WALL and wallHit() then return AUTO_WALL, true end
+		if st == S.Jumping and SLOTS.jump then return SLOTS.jump, false end
+		if SLOTS.fall then return SLOTS.fall, true end
+		if SLOTS.jump then return SLOTS.jump, false end
+		return nil
+	end
+	local sp = speedOf()
+	if sp < 0.6 then
+		if SLOTS.idle then return SLOTS.idle, true end
+		return nil
+	end
+	if SLOTS.run and (sp >= RUN_FROM or not SLOTS.walk) then return SLOTS.run, true end
+	if SLOTS.walk then return SLOTS.walk, true end
+	if SLOTS.run then return SLOTS.run, true end
+	return nil
+end
+
+local function snapshot()
+	blendFrom = {}
+	for k, v in pairs(pose) do blendFrom[k] = v end
+	blendT = 0
+end
+
+local function startPlay(key, loop, once)
+	local a = ANIMS[key]
+	if not a or a.rig ~= hum.RigType.Name then return false end
+	if cur and cur.key == key then
+		cur.loop = loop
+		return true
+	end
+	snapshot()
+	cur = { key = key, a = a, t = 0, loop = loop, once = once }
+	return true
+end
+
+-- stops the default / low priority animations so they do not fight ours.
+-- returns true when the game itself is playing an Action animation (an attack, ...)
+local function gameBusy()
+	local animator = hum:FindFirstChildOfClass("Animator")
+	if not animator then return false end
+	local busy = false
+	for _, tr in ipairs(animator:GetPlayingAnimationTracks()) do
+		local pv = tr.Priority.Value
+		if pv >= 2 and pv <= 5 then
+			if tr.WeightCurrent > 0.05 then busy = true end
+		elseif take then
+			pcall(function() tr:Stop(0) end)
+		end
+	end
+	return busy
+end
+
+local function setup(c)
+	char = c
+	hum = c:WaitForChild("Humanoid", 10)
+	root = c:WaitForChild("HumanoidRootPart", 10)
+	motors, cur, shot, pose, blendFrom, blendT = {}, nil, nil, {}, nil, 1
+	if not hum or not root then return end
+	for _, d in ipairs(c:GetDescendants()) do
+		if d:IsA("Motor6D") and not motors[d.Name] then motors[d.Name] = d end
+	end
+	local active = false
+	for _, key in pairs(SLOTS) do
+		if ANIMS[key] and ANIMS[key].rig == hum.RigType.Name then active = true end
+	end
+	if AUTO_WALL and ANIMS[AUTO_WALL] and ANIMS[AUTO_WALL].rig == hum.RigType.Name then active = true end
+	if AUTO_EDGE and ANIMS[AUTO_EDGE] and ANIMS[AUTO_EDGE].rig == hum.RigType.Name then active = true end
+	take = TAKE_OVER and active
+	animate = c:FindFirstChild("Animate")
+	if take and animate then pcall(function() animate.Disabled = true end) end
+end
+
+local function makeTool(def)
+	local tool = Instance.new("Tool")
+	tool.Name = def.name
+	tool.ToolTip = def.name
+	tool.RequiresHandle = false
+	tool.CanBeDropped = false
+	tool.Activated:Connect(function()
+		if not alive or not hum or hum.Health <= 0 then return end
+		local a = ANIMS[def.key]
+		if not a or a.rig ~= hum.RigType.Name then return end
+		snapshot()
+		shot = { a = a, t = 0 }
+	end)
+	return tool
+end
+
+local function giveTools()
+	local bp = lp:FindFirstChildOfClass("Backpack") or lp:WaitForChild("Backpack", 10)
+	if not bp then return end
+	for _, def in ipairs(TOOLS) do
+		if not bp:FindFirstChild(def.name) and not (char and char:FindFirstChild(def.name)) then
+			local tl = makeTool(def)
+			tl.Parent = bp
+		end
+	end
+end
+
+local function resetPose()
+	for name in pairs(pose) do
+		local m = motors[name]
+		if m then m.Transform = CFrame.new() end
+	end
+	pose = {}
+end
+
+table.insert(conns, RunService.Heartbeat:Connect(function(dt)
+	if not alive or not hum or not hum.Parent or not root or not root.Parent then return end
+	if hum.Health <= 0 then return end
+	local busy = gameBusy()
+
+	if shot then
+		shot.t = shot.t + dt
+		if shot.t > shot.a.len then shot = nil end
+	end
+
+	if not shot then
+		if busy or not take then
+			cur = nil
+			if next(pose) then resetPose() end
+			return
+		end
+		if cur and cur.once and cur.t < cur.a.len then
+			-- finish the edge climb
+		else
+			local st = hum:GetState()
+			if AUTO_EDGE and (st == S.Freefall or st == S.Jumping) and os.clock() - lastEdge > 1.5 and edgeCheck() then
+				if startPlay(AUTO_EDGE, false, true) then lastEdge = os.clock() end
+			else
+				local key, loop = pick()
+				if key then
+					if not startPlay(key, loop, false) then cur = nil end
+				else
+					cur = nil
+				end
+			end
+		end
+	end
+
+	local play = shot or cur
+	if not play then
+		if next(pose) then resetPose() end
+		return
+	end
+	if play == cur then
+		cur.t = cur.t + dt
+		if cur.loop and cur.t > cur.a.len then cur.t = cur.t % cur.a.len end
+	end
+
+	local out = {}
+	sample(play.a, play.t, out)
+	if blendT < 1 then
+		blendT = math.min(blendT + dt / math.max(BLEND, 0.01), 1)
+		for k, v in pairs(out) do
+			local f = blendFrom and blendFrom[k]
+			if f then out[k] = f:Lerp(v, blendT) end
+		end
+		if blendFrom then
+			for k, f in pairs(blendFrom) do
+				if out[k] == nil then out[k] = f:Lerp(CFrame.new(), blendT) end
+			end
+		end
+	end
+	for name, cf in pairs(out) do
+		local m = motors[name]
+		if m then m.Transform = cf end
+	end
+	for name in pairs(pose) do
+		if out[name] == nil and motors[name] then motors[name].Transform = CFrame.new() end
+	end
+	pose = out
+end))
+
+table.insert(conns, lp.CharacterAdded:Connect(function(c)
+	task.spawn(function()
+		setup(c)
+		giveTools()
+	end)
+end))
+
+env.StopInstanceXMovement = function()
+	alive = false
+	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+	for _, m in pairs(motors) do pcall(function() m.Transform = CFrame.new() end) end
+	if animate then pcall(function() animate.Disabled = false end) end
+	env.StopInstanceXMovement = nil
+end
+
+task.spawn(function()
+	setup(lp.Character or lp.CharacterAdded:Wait())
+	giveTools()
+end)
+]===]
+
+function MV.build(scan, opts, want, fails, cb)
+	local head, body = {}, {}
+	local function h(s) head[#head + 1] = s end
+	local function b(s) body[#body + 1] = s end
+	local emitted = {}
+	local rigSeen = {}
+	local function data(idStr)
+		local n = numOf(idStr)
+		if emitted[n] ~= nil then return emitted[n] end
+		local raw = want[n]
+		local d = raw and details[raw]
+		if not d then emitted[n] = false return false end
+		local okS, c = pcall(K.simplified, raw)
+		if not okS or not c or not c.joints or not c.joints[1] then emitted[n] = false return false end
+		local joints, rig = c.joints, d.rig
+		if opts.target and opts.target ~= rig then
+			local okC, conv = pcall(X.convert, joints, rig, opts.target)
+			if okC and conv and conv[1] then joints, rig = conv, opts.target end
+		end
+		rigSeen[rig] = true
+		local base = joints[1].frames
+		b(string.format("ANIMS[%q] = { rig = %q, looped = %s, frames = {", n, tostring(rig), tostring(d.looped and true or false)))
+		for i = 1, #base do
+			local dt = i > 1 and (base[i][1] - base[i - 1][1]) or 0
+			local parts = {}
+			for _, j in ipairs(joints) do
+				local f = j.frames[i]
+				if f then parts[#parts + 1] = string.format("[%q]=%s", j.name, K.cfStr(f[2])) end
+			end
+			b(string.format("{%s,{%s}},", K.num(dt), table.concat(parts, ",")))
+		end
+		b("} }")
+		emitted[n] = true
+		return true
+	end
+
+	local slots, wallKey, edgeKey = {}, nil, nil
+	local tools, usedNames = {}, {}
+	if opts.loco then
+		for _, slot in ipairs(LOCO) do
+			local e = scan.loco[slot]
+			if e and data(e.id) then slots[#slots + 1] = string.format("%s = %q", slot, numOf(e.id)) end
+		end
+		for _, e in ipairs(scan.auto) do
+			if data(e.id) then
+				if e.kind == "wall" and not wallKey then wallKey = numOf(e.id)
+				elseif e.kind == "edge" and not edgeKey then edgeKey = numOf(e.id)
+				else tools[#tools + 1] = { name = cleanName(e.name), id = e.id } end
+			end
+		end
+	end
+	if opts.tools then
+		for _, e in ipairs(scan.tools) do tools[#tools + 1] = { name = cleanName(e.name), id = e.id } end
+	end
+	local toolLines = {}
+	for _, t in ipairs(tools) do
+		if data(t.id) then
+			local nm = t.name
+			local k = 1
+			while usedNames[nm] do
+				k = k + 1
+				nm = t.name .. " " .. k
+			end
+			usedNames[nm] = true
+			toolLines[#toolLines + 1] = string.format("\t{ name = %q, key = %q },", nm, numOf(t.id))
+		end
+	end
+
+	h("-- Instance X | Movement animations of your character (frame by frame)")
+	h("-- Works in other games: no AnimationId is needed and no popup is shown.")
+	h("-- Frame by frame data is below the ids. Run it once; it stays active until you rejoin")
+	h("-- (stop it with getgenv().StopInstanceXMovement()).")
+	h("")
+	h("-- ===== ANIMATION IDS ON YOUR CHARACTER =====")
+	if opts.loco then
+		h("-- Automatic (no button needed):")
+		for _, slot in ipairs(LOCO) do
+			local e = scan.loco[slot]
+			if e then h(string.format("--   %-10s %s", slot, tostring(e.id))) end
+		end
+		for _, e in ipairs(scan.auto) do
+			h(string.format("--   %-10s %s   (%s)", e.kind == "wall" and "wall climb" or "edge climb", tostring(e.id), e.name))
+		end
+	end
+	if opts.tools then
+		h("-- Tools / moves (each one becomes a Backpack tool):")
+		for _, e in ipairs(scan.tools) do h(string.format("--   %-18s %s", cleanName(e.name), tostring(e.id))) end
+	end
+	local rigs = {}
+	for r in pairs(rigSeen) do rigs[#rigs + 1] = r end
+	table.sort(rigs)
+	h("-- Rig of the data below: " .. (#rigs > 0 and table.concat(rigs, ", ") or "none") .. " (it only plays on a character with the same rig; use the Convert to R6 / R15 options otherwise)")
+	local nf = 0
+	for n, why in pairs(fails) do
+		nf = nf + 1
+		if nf <= 8 then h(string.format("-- could not capture %s: %s", n, tostring(why):sub(1, 80))) end
+	end
+	if #body == 0 then return cb(nil, "No animation could be captured. Try again with Quality: Medium or Low, or play the movements first with the recorder open.") end
+	h("")
+	h("local ANIMS = {}")
+	for _, l in ipairs(body) do h(l) end
+	h("local SLOTS = { " .. table.concat(slots, ", ") .. " }")
+	h("local AUTO_WALL = " .. (wallKey and string.format("%q", wallKey) or "nil"))
+	h("local AUTO_EDGE = " .. (edgeKey and string.format("%q", edgeKey) or "nil"))
+	h("local TOOLS = {")
+	for _, l in ipairs(toolLines) do h(l) end
+	h("}")
+	h("local TAKE_OVER = " .. tostring((#slots > 0 or wallKey ~= nil or edgeKey ~= nil) and true or false))
+	h("local SMOOTH = " .. tostring(opts.smooth and true or false))
+	h("local BLEND = 0.12 -- seconds to blend between two animations")
+	h("local RUN_FROM = 20 -- speed (studs/s) where run replaces walk (only when you have both)")
+	h("")
+	h(MV_RUNTIME)
+	cb(table.concat(head, "\n"))
+end
+
+function MV.gen(scan, opts, cb, setStatus)
+	local want, order = {}, {}
+	local function need(id)
+		local n = numOf(id)
+		if n and n ~= "0" and not want[n] then
+			want[n] = id
+			order[#order + 1] = n
+		end
+	end
+	if opts.loco then
+		for _, slot in ipairs(LOCO) do
+			if scan.loco[slot] then need(scan.loco[slot].id) end
+		end
+		for _, e in ipairs(scan.auto) do need(e.id) end
+	end
+	if opts.tools then
+		for _, e in ipairs(scan.tools) do need(e.id) end
+	end
+	if #order == 0 then
+		return cb(nil, "Nothing found. Run, jump and climb, use your moves with the recorder open, then open this again.")
+	end
+	local fails, i = {}, 0
+	local function nextOne()
+		i = i + 1
+		if i > #order then return MV.build(scan, opts, want, fails, cb) end
+		local n = order[i]
+		if setStatus then setStatus(string.format("Capturing %d/%d ...", i, #order)) end
+		requestDetail(want[n], function(ok, res)
+			if not ok then fails[n] = tostring(res) end
+			nextOne()
+		end, function(t)
+			if setStatus then setStatus(string.format("%d/%d: %s", i, #order, tostring(t))) end
+		end)
+	end
+	nextOne()
+end
+
+function MV.open(scan)
+	local function variant(name, opts)
+		return { name = name, get = function(cb, setStatus) MV.gen(scan, opts, cb, setStatus) end }
+	end
+	openViewer("Movement - my character", {
+		variant("Movement + tools (frame by frame)", { loco = true, tools = true, smooth = true }),
+		variant("Movement only", { loco = true, tools = false, smooth = true }),
+		variant("Tools / moves only (tools)", { loco = false, tools = true, smooth = true }),
+		variant("Exact steps (no blending)", { loco = true, tools = true, smooth = false }),
+		variant("Convert to R6", { loco = true, tools = true, smooth = true, target = "R6" }),
+		variant("Convert to R15", { loco = true, tools = true, smooth = true, target = "R15" }),
+		{ name = "Animation ids only", get = function(cb) cb(MV.idsOnly(scan)) end },
+	}, 1)
+end
+
+function MV.run()
+	task.spawn(function()
+		local ok, scan = pcall(MV.scan)
+		if not ok then
+			warn("[Instance X] movement scan failed: " .. tostring(scan))
+			return
+		end
+		MV.open(scan)
+	end)
+end
+
+do
+	local page = newPage("Movement")
+	local msg = Instance.new("TextLabel")
+	msg.BackgroundTransparency = 1
+	msg.Position = UDim2.new(0, 8, 0, 8)
+	msg.Size = UDim2.new(1, -16, 0, 96)
+	msg.TextWrapped = true
+	msg.TextXAlignment = Enum.TextXAlignment.Left
+	msg.TextYAlignment = Enum.TextYAlignment.Top
+	msg.TextColor3 = C.sub
+	msg.Font = Th.font
+	msg.TextSize = 15
+	msg.Text = "Shows every movement animation of your character (run, walk, jump, climb, wall climb, edge climb...) and your tools / moves in the code viewer, with frame by frame code that works in other games. Tip: use your movements with the recorder open first so custom ones are found."
+	msg.Parent = page
+	local btn = K.newButton(page, "Show my movement animations", C.green)
+	btn.Position = UDim2.new(0, 8, 0, 112)
+	btn.Size = UDim2.new(1, -16, 0, 34)
+	btn.TextSize = 16
+	btn.MouseButton1Click:Connect(MV.run)
+	X.addIcon(btn, "move", 20)
+	if tabButtons.Movement then X.addIcon(tabButtons.Movement, "move", 14) end
+end
+
+-- ===== save game =====
+local SG = {}
+X.sg = SG
+local SG_RUNTIME = [===[
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local lp = Players.LocalPlayer
+local env0 = (getgenv and getgenv()) or _G
+local BASEENV = (getfenv and getfenv()) or env0
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local REG, MODS = {}, {}
+local function numOf(id) return tostring(id or ""):match("%d+") end
+
+-- ===== animations (frame by frame) =====
+for _, a in pairs(ANIMS) do
+	local t = 0
+	a.times = {}
+	for i, f in ipairs(a.frames) do
+		t = t + f[1]
+		a.times[i] = t
+	end
+	a.len = math.max(a.times[#a.times] or 0, 0.05)
+end
+
+local function sample(a, t, out)
+	local fr, times = a.frames, a.times
+	local n = #fr
+	if n == 0 then return end
+	if t >= times[n] then
+		for k, v in pairs(fr[n][2]) do out[k] = v end
+		return
+	end
+	local i = 1
+	while i < n and times[i + 1] <= t do i = i + 1 end
+	local f1, f2 = fr[i], fr[i + 1]
+	if not f2 then
+		for k, v in pairs(f1[2]) do out[k] = v end
+		return
+	end
+	local span = math.max(times[i + 1] - times[i], 1e-6)
+	local al = math.clamp((t - times[i]) / span, 0, 1)
+	for k, v in pairs(f2[2]) do
+		local from = f1[2][k]
+		out[k] = from and from:Lerp(v, al) or v
+	end
+end
+
+local Tracks, serial = {}, 0
+local motors, rigName, driven = {}, "R15", {}
+
+local function refreshChar(c)
+	motors = {}
+	driven = {}
+	if not c then return end
+	local hum = c:WaitForChild("Humanoid", 10)
+	if hum then rigName = hum.RigType.Name end
+	for _, d in ipairs(c:GetDescendants()) do
+		if d:IsA("Motor6D") and not motors[d.Name] then motors[d.Name] = d end
+	end
+end
+task.spawn(function() refreshChar(lp.Character or lp.CharacterAdded:Wait()) end)
+lp.CharacterAdded:Connect(function(c) task.spawn(refreshChar, c) end)
+
+local function newSignal()
+	local be = Instance.new("BindableEvent")
+	return {
+		Event = be.Event,
+		Connect = function(_, f) return be.Event:Connect(f) end,
+		Once = function(_, f) return be.Event:Once(f) end,
+		Wait = function() return be.Event:Wait() end,
+		Fire = function(_, ...) be:Fire(...) end,
+	}
+end
+
+local function makeTrack(key, animInst)
+	local a = ANIMS[key]
+	local tr = {
+		Animation = animInst, Name = animInst and animInst.Name or key, Length = a.len, Looped = a.looped,
+		IsPlaying = false, Priority = Enum.AnimationPriority.Action, Speed = 1, TimePosition = 0,
+		WeightCurrent = 1, WeightTarget = 1, _a = a, _t = 0, _order = 0,
+	}
+	tr.Stopped, tr.Ended, tr.DidLoop, tr.KeyframeReached = newSignal(), newSignal(), newSignal(), newSignal()
+	function tr:GetMarkerReachedSignal() return newSignal() end
+	function tr:GetTimeOfKeyframe() return 0 end
+	function tr:Play(_, weight, speed)
+		if speed then self.Speed = speed end
+		if weight then self.WeightTarget = weight end
+		self.IsPlaying = true
+		self._t, self.TimePosition = 0, 0
+		serial = serial + 1
+		self._order = serial
+		Tracks[self] = true
+	end
+	function tr:Stop()
+		if Tracks[self] then
+			Tracks[self] = nil
+			self.IsPlaying = false
+			self.Stopped:Fire()
+			self.Ended:Fire()
+		end
+	end
+	function tr:AdjustSpeed(s) self.Speed = s end
+	function tr:AdjustWeight(w) self.WeightTarget = w end
+	function tr:Destroy() self:Stop() end
+	return tr
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	if not next(Tracks) then
+		if next(driven) then
+			for name in pairs(driven) do
+				local m = motors[name]
+				if m then m.Transform = CFrame.new() end
+			end
+			driven = {}
+		end
+		return
+	end
+	local list = {}
+	for t in pairs(Tracks) do list[#list + 1] = t end
+	table.sort(list, function(x, y)
+		local px, py = x.Priority.Value, y.Priority.Value
+		if px ~= py then return px < py end
+		return x._order < y._order
+	end)
+	local out = {}
+	for _, t in ipairs(list) do
+		t._t = t._t + dt * t.Speed
+		if t._t >= t._a.len then
+			if t.Looped then
+				t._t = t._t % t._a.len
+				t.DidLoop:Fire()
+			else
+				t:Stop()
+			end
+		end
+		if t.IsPlaying then
+			t.TimePosition = t._t
+			if t._a.rig == rigName then sample(t._a, t._t, out) end
+		end
+	end
+	for name, cf in pairs(out) do
+		local m = motors[name]
+		if m then m.Transform = cf end
+	end
+	for name in pairs(driven) do
+		if out[name] == nil and motors[name] then motors[name].Transform = CFrame.new() end
+	end
+	driven = out
+end)
+
+env0.IX_PlayAnim = function(id)
+	local k = numOf(id)
+	if k and ANIMS[k] then
+		local t = makeTrack(k, nil)
+		t:Play()
+		return t
+	end
+end
+
+-- LoadAnimation calls for known animations play the frame by frame copy instead
+if next(ANIMS) and hookmetamethod and getnamecallmethod then
+	pcall(function()
+		local old
+		local function hook(self, ...)
+			local m = getnamecallmethod()
+			if m == "LoadAnimation" then
+				local a = ...
+				if typeof(a) == "Instance" and a.ClassName == "Animation" then
+					local k = numOf(a.AnimationId)
+					if k and ANIMS[k] then return makeTrack(k, a) end
+				end
+			end
+			return old(self, ...)
+		end
+		old = hookmetamethod(game, "__namecall", newcclosure and newcclosure(hook) or hook)
+	end)
+end
+
+-- ===== structures =====
+local function rootContainer(key)
+	if key == "Workspace" then return workspace end
+	if key == "ReplicatedStorage" or key == "ReplicatedFirst" then return game:GetService(key) end
+	if key == "StarterGui" then return lp:WaitForChild("PlayerGui") end
+	if key == "StarterPack" then return lp:WaitForChild("Backpack") end
+	if key == "PlayerScripts" then return lp:WaitForChild("PlayerScripts") end
+	if key == "CharacterScripts" then return lp.Character or lp.CharacterAdded:Wait() end
+	return nil
+end
+
+if LIGHT and LIGHT ~= "" then
+	local f = loadstring(LIGHT)
+	if f then pcall(f) end
+end
+
+local GUINAMES = {}
+for i, job in ipairs(JOBS) do
+	local parent
+	if job.parent == 0 then parent = rootContainer(job.root) else parent = REG[job.parent] end
+	if job.gname then GUINAMES[job.gname] = true end
+	local fn, err = loadstring(job.code)
+	if fn then
+		local ok, res = pcall(fn, parent)
+		if ok and typeof(res) == "Instance" then REG[job.id] = res end
+		if not ok then warn("[Instance X] part " .. i .. ": " .. tostring(res)) end
+	else
+		warn("[Instance X] part " .. i .. " did not compile: " .. tostring(err))
+	end
+	if i % 3 == 0 then task.wait() end
+end
+pcall(function()
+	for _, g in ipairs(lp:WaitForChild("PlayerGui"):GetChildren()) do
+		if g:IsA("ScreenGui") and GUINAMES[g.Name] then g.ResetOnSpawn = false end
+	end
+end)
+
+-- ===== scripts =====
+local function childAt(parent, name, idx, isS)
+	local n = 0
+	for _, c in ipairs(parent:GetChildren()) do
+		if c.Name == name and (c:GetAttribute("IX_Script") == true) == isS then
+			n = n + 1
+			if n == idx then return c end
+		end
+	end
+	return nil
+end
+
+local orphans
+local function placeholder(def)
+	local parent = rootContainer(def.root)
+	if parent then
+		for i = 1, #def.path - 1 do
+			local e = def.path[i]
+			parent = childAt(parent, e[1], e[2], e[3])
+			if not parent then break end
+		end
+	end
+	if not parent then
+		if not orphans then
+			orphans = Instance.new("Folder")
+			orphans.Name = "IX_Orphans"
+			orphans.Parent = game:GetService("ReplicatedStorage")
+		end
+		parent = orphans
+	end
+	local ph = Instance.new(def.class == "ModuleScript" and "ModuleScript" or "LocalScript")
+	ph.Name = def.name
+	ph:SetAttribute("IX_Script", true)
+	pcall(function() ph.Disabled = true end)
+	ph.Parent = parent
+	return ph
+end
+
+local function makeEnv(ph)
+	return setmetatable({
+		script = ph,
+		require = function(x)
+			local m = MODS[x]
+			if m then
+				if not m.done then
+					m.done = true
+					local ok, r = pcall(m.fn)
+					if ok then m.val = r else warn("[Instance X] module " .. tostring(m.name) .. ": " .. tostring(r)) end
+				end
+				return m.val
+			end
+			return BASEENV.require(x)
+		end,
+	}, { __index = BASEENV, __newindex = BASEENV })
+end
+
+local queue = {}
+for _, def in ipairs(SCRIPTS) do
+	local ph = placeholder(def)
+	local fn = loadstring(def.src, "=" .. def.name)
+	if fn then
+		if setfenv then pcall(setfenv, fn, makeEnv(ph)) end
+		if def.class == "ModuleScript" then
+			MODS[ph] = { fn = fn, name = def.name }
+		elseif def.run then
+			queue[#queue + 1] = { fn = fn, name = def.name }
+		end
+	else
+		warn("[Instance X] script " .. def.name .. " did not compile")
+	end
+end
+for _, q in ipairs(queue) do
+	task.spawn(function()
+		local ok, e = pcall(q.fn)
+		if not ok then warn("[Instance X] " .. q.name .. ": " .. tostring(e)) end
+	end)
+	task.wait()
+end
+]===]
+
+local function genvT() return (getgenv and getgenv()) or _G end
+
+local function longStr(s)
+	s = tostring(s)
+	if s:find("\0", 1, true) then s = (s:gsub("[^\1-\255]", "")) end
+	local n = 0
+	while s:find("]" .. string.rep("=", n) .. "]", 1, true) do n = n + 1 end
+	local eq = string.rep("=", n)
+	return "[" .. eq .. "[\n" .. s .. "]" .. eq .. "]"
+end
+
+local function cleanFile(s)
+	s = tostring(s or ""):gsub("[^%w%-_ %.]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if s == "" then s = "Game" end
+	return s:sub(1, 60)
+end
+
+function SG.gameName()
+	local ok, info = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId) end)
+	if ok and info and info.Name then return cleanFile(info.Name) end
+	return "Game_" .. tostring(game.PlaceId)
+end
+
+function SG.saveOriginal(name, setStatus, done)
+	local R = genvT().__RPP
+	local save = R and R.Main and R.Main.saveinstance
+	local native = saveinstance or (syn and syn.saveinstance) or genvT().saveinstance
+	if not save and not native then return done(false, "this executor has no saveinstance") end
+	local args = {
+		Decompile = true, DecompileTimeout = 10, DecompileIgnore = { "Chat", "CoreGui", "CorePackages" },
+		NilInstances = false, RemovePlayerCharacters = true, SavePlayers = false, MaxThreads = 3,
+		ShowStatus = true, IgnoreDefaultProps = true, IsolateStarterPlayer = true,
+	}
+	args.ProgressCallback = function(d, t) setStatus(string.format("Saving %s/%s ...", tostring(d), tostring(t))) end
+	task.spawn(function()
+		local ok, res
+		if save then
+			ok, res = pcall(save, game, name, args)
+		else
+			local a2 = {}
+			for k, v in pairs(args) do a2[k] = v end
+			a2.Object, a2.FileName, a2.FilePath = game, name, name
+			ok, res = pcall(native, a2)
+			if not ok then ok, res = pcall(native, game, name, args) end
+		end
+		if ok then done(true, tostring(res or name)) else done(false, tostring(res)) end
+	end)
+end
+
+local FX_PROPS = {
+	Sky = { "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "CelestialBodiesShown", "StarCount", "SunAngularSize", "MoonAngularSize", "SunTextureId", "MoonTextureId" },
+	Atmosphere = { "Density", "Offset", "Color", "Decay", "Glare", "Haze" },
+	BloomEffect = { "Enabled", "Intensity", "Size", "Threshold" },
+	BlurEffect = { "Enabled", "Size" },
+	ColorCorrectionEffect = { "Enabled", "Brightness", "Contrast", "Saturation", "TintColor" },
+	SunRaysEffect = { "Enabled", "Intensity", "Spread" },
+	DepthOfFieldEffect = { "Enabled", "FarIntensity", "FocusDistance", "InFocusRadius", "NearIntensity" },
+}
+local LIGHT_PROPS = { "Ambient", "Brightness", "ColorShift_Bottom", "ColorShift_Top", "OutdoorAmbient", "ClockTime", "GeographicLatitude", "ExposureCompensation", "FogColor", "FogEnd", "FogStart", "GlobalShadows", "EnvironmentDiffuseScale", "EnvironmentSpecularScale", "ShadowSoftness" }
+
+local function lit(v)
+	local t = typeof(v)
+	if t == "number" then
+		if v ~= v or math.abs(v) == math.huge then return nil end
+		return K.num(v)
+	elseif t == "string" then return string.format("%q", v)
+	elseif t == "boolean" then return tostring(v)
+	elseif t == "Color3" then return string.format("Color3.new(%s,%s,%s)", K.num(v.R), K.num(v.G), K.num(v.B))
+	elseif t == "Vector3" then return string.format("Vector3.new(%s,%s,%s)", K.num(v.X), K.num(v.Y), K.num(v.Z))
+	elseif t == "EnumItem" then return tostring(v) end
+	return nil
+end
+
+local function lightingCode()
+	local Lt = game:GetService("Lighting")
+	local o = {
+		'local Lighting = game:GetService("Lighting")',
+		"local function P(o, k, v) pcall(function() o[k] = v end) end",
+		'for _, c in ipairs(Lighting:GetChildren()) do if c:IsA("Sky") or c:IsA("Atmosphere") or c:IsA("PostEffect") then c:Destroy() end end',
+	}
+	for _, p in ipairs(LIGHT_PROPS) do
+		local ok, v = pcall(function() return Lt[p] end)
+		local s = ok and lit(v)
+		if s then o[#o + 1] = string.format("P(Lighting, %q, %s)", p, s) end
+	end
+	for _, c in ipairs(Lt:GetChildren()) do
+		local list = FX_PROPS[c.ClassName]
+		if list then
+			o[#o + 1] = string.format("do local o = Instance.new(%q) o.Name = %q", c.ClassName, c.Name)
+			for _, p in ipairs(list) do
+				local ok, v = pcall(function() return c[p] end)
+				local s = ok and lit(v)
+				if s then o[#o + 1] = string.format("P(o, %q, %s)", p, s) end
+			end
+			o[#o + 1] = "o.Parent = Lighting end"
+		end
+	end
+	return table.concat(o, "\n")
+end
+
+local function tryDecompile(s)
+	if not decompile then return nil end
+	local done, src = false, nil
+	task.spawn(function()
+		local ok, r = pcall(decompile, s)
+		if ok and type(r) == "string" then src = r end
+		done = true
+	end)
+	local t0 = os.clock()
+	while not done and os.clock() - t0 < 8 do task.wait(0.05) end
+	return src
+end
+
+local function pathOf(inst, rootInst)
+	local chain, cur = {}, inst
+	while cur and cur ~= rootInst do
+		table.insert(chain, 1, cur)
+		cur = cur.Parent
+	end
+	local out = {}
+	for _, c in ipairs(chain) do
+		local isS = c:IsA("LuaSourceContainer")
+		local idx, n = 1, 0
+		local par = c.Parent
+		if par then
+			for _, sib in ipairs(par:GetChildren()) do
+				if sib.Name == c.Name and sib:IsA("LuaSourceContainer") == isS then
+					n = n + 1
+					if sib == c then idx = n break end
+				end
+			end
+		end
+		out[#out + 1] = string.format("{%q,%d,%s}", c.Name, idx, tostring(isS))
+	end
+	return "{" .. table.concat(out, ",") .. "}"
+end
+
+function SG.buildClient(L, name, setStatus)
+	local Plrs = game:GetService("Players")
+	local chars = {}
+	for _, p in ipairs(Plrs:GetPlayers()) do
+		if p.Character then chars[#chars + 1] = p.Character end
+	end
+	local function isChar(inst)
+		for _, c in ipairs(chars) do
+			if inst == c or inst:IsDescendantOf(c) then return true end
+		end
+		return false
+	end
+	local SP = game:GetService("StarterPlayer")
+	local roots = {
+		{ key = "Workspace", inst = workspace, kind = "world" },
+		{ key = "ReplicatedStorage", inst = game:GetService("ReplicatedStorage"), kind = "world" },
+		{ key = "ReplicatedFirst", inst = game:GetService("ReplicatedFirst"), kind = "world" },
+		{ key = "StarterGui", inst = game:GetService("StarterGui"), kind = "gui" },
+		{ key = "StarterPack", inst = game:GetService("StarterPack"), kind = "pack" },
+		{ key = "PlayerScripts", inst = SP:FindFirstChild("StarterPlayerScripts"), kind = "scripts" },
+		{ key = "CharacterScripts", inst = SP:FindFirstChild("StarterCharacterScripts"), kind = "scripts" },
+	}
+
+	-- 1. plan the structure parts
+	setStatus("Planning structures ...")
+	local jobs = {}
+	local MAXC = 1200
+	local function plan(inst, parentId, rootKey)
+		if inst:IsA("Terrain") or inst:IsA("Camera") or inst:IsA("LuaSourceContainer") then return end
+		if rootKey == "Workspace" and isChar(inst) then return end
+		if not (inst:IsA("BasePart") or inst:IsA("Model") or inst:IsA("Folder")) then return end
+		local n = #inst:GetDescendants() + 1
+		local id = #jobs + 1
+		if n <= MAXC or inst:IsA("BasePart") then
+			jobs[id] = { id = id, parent = parentId, root = rootKey, inst = inst, full = true }
+		else
+			jobs[id] = { id = id, parent = parentId, root = rootKey, inst = inst, full = false }
+			for _, ch in ipairs(inst:GetChildren()) do plan(ch, id, rootKey) end
+		end
+		if id % 20 == 0 then task.wait() end
+	end
+	for _, r in ipairs(roots) do
+		if r.inst and r.kind == "world" then
+			for _, ch in ipairs(r.inst:GetChildren()) do plan(ch, 0, r.key) end
+		end
+	end
+
+	-- 2. code of each part
+	local parts = {}
+	local total = #jobs
+	for i, job in ipairs(jobs) do
+		if i % 5 == 0 then
+			setStatus(string.format("Structures %d/%d ...", i, total))
+			task.wait()
+		end
+		local ok, code = pcall(L.structCodeMulti, { job.inst }, job.inst.Name, { maxNodes = job.full and 3000 or 1 })
+		if ok and code then
+			code = code:gsub("local KEEP_POSITION = false", "local KEEP_POSITION = true", 1)
+			code = code:gsub("top%.Parent = workspace", "top.Parent = PARENT", 1)
+			parts[#parts + 1] = string.format("{ id = %d, root = %q, parent = %d, code = %s },", job.id, job.root, job.parent, longStr("local PARENT = ...\n" .. code))
+		end
+	end
+	local sg = roots[4].inst
+	if sg then
+		local gid = #jobs
+		for _, g in ipairs(sg:GetChildren()) do
+			if g:IsA("ScreenGui") then
+				local o = { desc = true, place = false, hui = false, compact = true }
+				local ok, code = pcall(function()
+					local nodes, meta = L.buildNodes(g, o)
+					return L.codeFrom(nodes, meta, o)
+				end)
+				if ok and code then
+					gid = gid + 1
+					parts[#parts + 1] = string.format("{ id = %d, root = \"StarterGui\", parent = 0, gname = %q, code = %s },", gid, g.Name, longStr(code))
+				end
+				task.wait()
+			end
+		end
+		jobs.guiEnd = gid
+	end
+	local pk = roots[5].inst
+	if pk and L.toolCode then
+		local gid = (jobs.guiEnd or #jobs)
+		for _, tl in ipairs(pk:GetChildren()) do
+			if tl:IsA("Tool") then
+				local ok, code = pcall(L.toolCode, tl)
+				if ok and type(code) == "string" then
+					gid = gid + 1
+					parts[#parts + 1] = string.format("{ id = %d, root = \"StarterPack\", parent = 0, code = %s },", gid, longStr(code))
+				end
+				task.wait()
+			end
+		end
+	end
+
+	-- 3. scripts
+	local scripts, animIds, animOrder, skippedScripts = {}, {}, {}, 0
+	local function noteAnim(id)
+		local n = tostring(id or ""):match("%d+")
+		if n and n ~= "0" and not animIds[n] and #animOrder < 80 then
+			animIds[n] = id
+			animOrder[#animOrder + 1] = n
+		end
+	end
+	local scanned = 0
+	for _, r in ipairs(roots) do
+		if r.inst and r.kind ~= "pack" then
+			local okd, list = pcall(function() return r.inst:GetDescendants() end)
+			if okd then
+				for _, d in ipairs(list) do
+					scanned = scanned + 1
+					if scanned % 3000 == 0 then task.wait() end
+					if d:IsA("Animation") then noteAnim(d.AnimationId) end
+					if d:IsA("LuaSourceContainer") and not isChar(d) and d.Name ~= "PlayerModule" and d.Name ~= "RbxCharacterSounds" and not d:FindFirstAncestor("PlayerModule") then
+						local cls = d.ClassName
+						local run = false
+						if cls == "LocalScript" then
+							run = (not d.Disabled) and (r.kind == "gui" or r.kind == "scripts" or r.key == "ReplicatedFirst")
+						elseif cls == "Script" then
+							local okc, rc = pcall(function() return d.RunContext == Enum.RunContext.Client and not d.Disabled end)
+							run = okc and rc
+						end
+						if cls == "ModuleScript" or run then
+							setStatus(string.format("Decompiling scripts (%d found) ...", #scripts + 1))
+							local src = tryDecompile(d)
+							if src and src ~= "" then
+								for id in src:gmatch("AnimationId%s*=%s*[\"']([^\"']+)[\"']") do noteAnim(id) end
+								scripts[#scripts + 1] = string.format("{ class = %q, name = %q, root = %q, run = %s, path = %s, src = %s },",
+									cls, d.Name, r.key, tostring(run), pathOf(d, r.inst), longStr(src))
+							else
+								skippedScripts = skippedScripts + 1
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	local mine = {}
+	if lp.Character then mine[#mine + 1] = lp.Character end
+	local bpk = lp:FindFirstChildOfClass("Backpack")
+	if bpk then mine[#mine + 1] = bpk end
+	for _, c in ipairs(mine) do
+		for _, d in ipairs(c:GetDescendants()) do
+			if d:IsA("Animation") then noteAnim(d.AnimationId) end
+		end
+	end
+
+	-- 4. animations -> frame by frame
+	local animLines, animOk = {}, 0
+	local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+	local targetRig = hum and hum.RigType.Name or "R15"
+	for i, n in ipairs(animOrder) do
+		setStatus(string.format("Animations %d/%d ...", i, #animOrder))
+		local raw = animIds[n]
+		local finished = false
+		local okc = false
+		requestDetail(raw, function(ok) okc = ok finished = true end)
+		local t0 = os.clock()
+		while not finished and os.clock() - t0 < 25 do task.wait(0.1) end
+		local d = okc and details[raw]
+		if d then
+			local okS, c = pcall(K.simplified, raw)
+			if okS and c and c.joints and c.joints[1] then
+				local joints, rig = c.joints, d.rig
+				if rig ~= targetRig then
+					local okC, conv = pcall(X.convert, joints, rig, targetRig)
+					if okC and conv and conv[1] then joints, rig = conv, targetRig end
+				end
+				local base = joints[1].frames
+				animLines[#animLines + 1] = string.format("ANIMS[%q] = { rig = %q, looped = %s, frames = {", n, tostring(rig), tostring(d.looped and true or false))
+				for fi = 1, #base do
+					local dt = fi > 1 and (base[fi][1] - base[fi - 1][1]) or 0
+					local ps = {}
+					for _, j in ipairs(joints) do
+						local f = j.frames[fi]
+						if f then ps[#ps + 1] = string.format("[%q]=%s", j.name, K.cfStr(f[2])) end
+					end
+					animLines[#animLines + 1] = string.format("{%s,{%s}},", K.num(dt), table.concat(ps, ","))
+				end
+				animLines[#animLines + 1] = "} }"
+				animOk = animOk + 1
+			end
+		end
+	end
+
+	-- 5. put the file together
+	setStatus("Writing the file ...")
+	local out = {}
+	local function add(s) out[#out + 1] = s end
+	add("-- Instance X | Save game (client usable): " .. name)
+	add(string.format("-- %d structure parts, %d scripts, %d animations (frame by frame).", #parts, #scripts, animOk))
+	add("-- Client side only: server scripts, terrain and anything the server owns are not included.")
+	if skippedScripts > 0 then add(string.format("-- %d script(s) could not be decompiled and were skipped.", skippedScripts)) end
+	add("local ANIMS = {}")
+	for _, l in ipairs(animLines) do add(l) end
+	add("local LIGHT = " .. longStr(lightingCode()))
+	add("local JOBS = {")
+	for _, p in ipairs(parts) do add(p) end
+	add("}")
+	add("local SCRIPTS = {")
+	for _, s in ipairs(scripts) do add(s) end
+	add("}")
+	add(SG_RUNTIME)
+	return table.concat(out, "\n")
+end
+
+function SG.saveClient(name, setStatus, done)
+	local L = genvT().__RPP_Copy
+	if not (L and L.structCodeMulti and L.buildNodes and L.codeFrom) then
+		return done(false, "The Copy module is not loaded yet, wait a moment and try again")
+	end
+	task.spawn(function()
+		local ok, res = pcall(SG.buildClient, L, name, setStatus)
+		if not ok then return done(false, tostring(res)) end
+		local okw, path = X.writeScriptFile(res, name .. "_ClientUsable", "InstanceX_Saves")
+		if okw then done(true, path) else done(false, path) end
+	end)
+end
+
+function SG.open()
+	if SG.win and SG.win.frame and SG.win.frame.Parent then
+		pcall(function() SG.win.setMinimized(false) end)
+		return
+	end
+	local win = createWindow({
+		title = "Save Game",
+		size = Vector2.new(330, 292),
+		pos = UDim2.new(0.5, -165, 0.5, -146),
+		minSize = Vector2.new(280, 260),
+		miniText = "SAVE",
+	})
+	SG.win = win
+	local content = win.content
+	local function mkLabel(text, y, h, size, color)
+		local l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1
+		l.Position = UDim2.new(0, 8, 0, y)
+		l.Size = UDim2.new(1, -16, 0, h)
+		l.TextWrapped = true
+		l.TextXAlignment = Enum.TextXAlignment.Left
+		l.TextYAlignment = Enum.TextYAlignment.Top
+		l.TextColor3 = color or C.sub
+		l.Font = Th.font
+		l.TextSize = size or 13
+		l.Text = text
+		l.Parent = content
+		return l
+	end
+	mkLabel("File name", 6, 18, 14, C.text)
+	local box = Instance.new("TextBox")
+	box.Position = UDim2.new(0, 8, 0, 26)
+	box.Size = UDim2.new(1, -16, 0, 30)
+	box.BackgroundColor3 = C.title
+	box.TextColor3 = C.text
+	box.Font = Th.font
+	box.TextSize = 16
+	box.ClearTextOnFocus = false
+	box.PlaceholderText = "name of the file"
+	box.Text = SG.gameName()
+	box.BorderSizePixel = 0
+	box.Parent = content
+	local b1 = K.newButton(content, "Save client usable", C.green)
+	b1.Position = UDim2.new(0, 8, 0, 64)
+	b1.Size = UDim2.new(1, -16, 0, 34)
+	b1.TextSize = 16
+	X.addIcon(b1, "client", 18)
+	mkLabel("Scripts, structures, GUIs and animations (frame by frame) as one client script. No server code.", 100, 38)
+	local b2 = K.newButton(content, "Save original", C.sel)
+	b2.Position = UDim2.new(0, 8, 0, 146)
+	b2.Size = UDim2.new(1, -16, 0, 34)
+	b2.TextSize = 16
+	X.addIcon(b2, "original", 18)
+	mkLabel("Everything as the game has it (.rbxl), through saveinstance.", 182, 32)
+	local status = mkLabel("", 218, 60, 13, C.text)
+
+	local busy = false
+	local function run(kind)
+		if busy then return end
+		busy = true
+		local nm = cleanFile(box.Text)
+		status.Text = "Starting ..."
+		local fn = kind == "client" and SG.saveClient or SG.saveOriginal
+		local ok, err = pcall(fn, nm, function(t) if status.Parent then status.Text = t end end, function(okDone, info)
+			busy = false
+			if status.Parent then
+				status.Text = okDone and ("Saved: " .. tostring(info) .. "  (in your executor's workspace folder)") or ("Failed: " .. tostring(info))
+			end
+		end)
+		if not ok then
+			busy = false
+			status.Text = "Failed: " .. tostring(err)
+		end
+	end
+	b1.MouseButton1Click:Connect(function() run("client") end)
+	b2.MouseButton1Click:Connect(function() run("original") end)
+end
+
+do
+	local Lg = genvT().__RPP_Logger
+	if Lg then Lg.openSaveGame = SG.open end
+end
+
+end)()
 
 X.RIG_R6 = {
 	{ "RootJoint", "HumanoidRootPart", "Torso" }, { "Neck", "Torso", "Head" },
@@ -39730,14 +41914,70 @@ end
 for inst, src in pairs(srcOf) do
 	if inst:IsA("LocalScript") then task.spawn(runSource, inst, src) end
 end]]
+	local SKIP_PROP = { Parent = true, ClassName = true, Archivable = true, Source = true, SourceAssetId = true, UniqueId = true, HistoryId = true }
+	local apiCache, defCache = {}, {}
+	local function apiProps(cn)
+		local c = apiCache[cn]
+		if c ~= nil then return c end
+		local RP = genv.__RPP
+		local API = RP and RP.API
+		local cls = API and API.Classes and API.Classes[cn]
+		if not cls or (cls.Tags and (cls.Tags.NotCreatable or cls.Tags.Service)) then
+			apiCache[cn] = false
+			return false
+		end
+		local list, refs, seen = {}, {}, {}
+		while cls do
+			for _, p in ipairs(cls.Properties) do
+				if not seen[p.Name] then
+					seen[p.Name] = true
+					local s, vt, tg = p.Serialization, p.ValueType, p.Tags or {}
+					if s and s.CanSave and vt and not SKIP_PROP[p.Name] and not tg.Deprecated and not tg.ReadOnly and not tg.NotScriptable then
+						if vt.Category == "Class" then refs[#refs + 1] = p.Name else list[#list + 1] = p.Name end
+					end
+				end
+			end
+			cls = cls.Superclass
+		end
+		c = { list, refs }
+		apiCache[cn] = c
+		return c
+	end
+	local function defaultsOf(cn)
+		local d = defCache[cn]
+		if d ~= nil then return d end
+		local ok, inst = pcall(Instance.new, cn)
+		d = (ok and inst) or false
+		defCache[cn] = d
+		return d
+	end
+	local function litX(v)
+		if typeof(v) == "PhysicalProperties" then
+			return string.format("PhysicalProperties.new(%s, %s, %s, %s, %s)", num(v.Density), num(v.Friction), num(v.Elasticity), num(v.FrictionWeight), num(v.ElasticityWeight))
+		end
+		return lit(v)
+	end
+	local function blocked(o, opts)
+		if opts.scripts == false and o:IsA("LuaSourceContainer") then return true end
+		if opts.sounds == false and (o:IsA("Sound") or o:IsA("SoundGroup") or o:IsA("SoundEffect")) then return true end
+		if opts.anims == false and (o:IsA("Animation") or o:IsA("Animator") or o:IsA("AnimationController")) then return true end
+		if opts.fx == false and (o:IsA("ParticleEmitter") or o:IsA("Beam") or o:IsA("Trail") or o:IsA("Light") or o:IsA("Highlight") or o:IsA("Fire") or o:IsA("Smoke") or o:IsA("Sparkles") or o:IsA("Explosion") or o:IsA("PostEffect")) then return true end
+		if opts.gui == false and (o:IsA("LayerCollector") or o:IsA("GuiBase2d")) then return true end
+		return false
+	end
 	local function toolCode(tool, mode)
 		mode = mode or "tool"
+		local opts = genv.__RPP_ToolOpts or {}
 		local nodes, idOf, skipped, nsrc, nscripts = {}, {}, {}, 0, 0
 		local function walk(o, parentId)
-			if #nodes >= 600 then return end
-			if not TP[o.ClassName] then
-				skipped[o.ClassName] = true
-				return
+			if #nodes >= 3000 then return end
+			local cn = o.ClassName
+			if o ~= tool and blocked(o, opts) then return end
+			if not TP[cn] then
+				if opts.other == false or not apiProps(cn) then
+					skipped[cn] = true
+					return
+				end
 			end
 			if mode == "model" and o:IsA("LuaSourceContainer") then return end
 			local id = #nodes + 1
@@ -39761,6 +42001,16 @@ end]]
 			"\tif id ~= \"\" then set(m, \"MeshId\", id) end",
 			"\treturn m",
 			"end",
+			"local function keepMesh(o, size, tex)",
+			"\ttask.spawn(function()",
+			"\t\tfor _ = 1, 10 do",
+			"\t\t\ttask.wait(0.4)",
+			"\t\t\tif not o.Parent then return end",
+			"\t\t\tif o.Size ~= size then set(o, \"Size\", size) end",
+			"\t\t\tif tex ~= \"\" and o.TextureID ~= tex then set(o, \"TextureID\", tex) end",
+			"\t\tend",
+			"\tend)",
+			"end",
 			"local n, srcOf = {}, {}",
 		}
 		for i, nd in ipairs(nodes) do
@@ -39774,11 +42024,39 @@ end]]
 			else
 				lines[#lines + 1] = "n[" .. i .. "] = Instance.new(" .. string.format("%q", o.ClassName) .. ")"
 			end
-			for _, name in ipairs(TP[o.ClassName]) do
+			local plist, def = TP[o.ClassName], nil
+			if not plist then
+				local ap = apiProps(o.ClassName)
+				plist = (ap and ap[1]) or {}
+				def = defaultsOf(o.ClassName)
+			end
+			for _, name in ipairs(plist) do
 				local ok, v = pcall(function() return o[name] end)
 				if ok and v ~= nil then
-					local s = lit(v)
-					if s then lines[#lines + 1] = "set(n[" .. i .. "], " .. string.format("%q", name) .. ", " .. s .. ")" end
+					local same = false
+					if def and name ~= "Name" then
+						local okD, dv = pcall(function() return def[name] end)
+						same = okD and dv == v
+					end
+					if not same then
+						local s = litX(v)
+						if s then lines[#lines + 1] = "set(n[" .. i .. "], " .. string.format("%q", name) .. ", " .. s .. ")" end
+					end
+				end
+			end
+			if opts.attrs ~= false then
+				local okA, attrs = pcall(function() return o:GetAttributes() end)
+				if okA and type(attrs) == "table" then
+					for k, v in pairs(attrs) do
+						local s = litX(v)
+						if s then lines[#lines + 1] = "pcall(function() n[" .. i .. "]:SetAttribute(" .. string.format("%q", k) .. ", " .. s .. ") end)" end
+					end
+				end
+				local okT, tags = pcall(function() return game:GetService("CollectionService"):GetTags(o) end)
+				if okT and type(tags) == "table" then
+					for _, tg in ipairs(tags) do
+						lines[#lines + 1] = "pcall(function() game:GetService(\"CollectionService\"):AddTag(n[" .. i .. "], " .. string.format("%q", tg) .. ") end)"
+					end
 				end
 			end
 			if o:IsA("LuaSourceContainer") then
@@ -39799,11 +42077,24 @@ end]]
 			if nd.parent > 0 then lines[#lines + 1] = "n[" .. i .. "].Parent = n[" .. nd.parent .. "]" end
 		end
 		for i, nd in ipairs(nodes) do
-			for _, rn in ipairs(REFS[nd.o.ClassName] or {}) do
+			local rl = REFS[nd.o.ClassName]
+			if not rl then
+				local ap = apiProps(nd.o.ClassName)
+				rl = (ap and ap[2]) or {}
+			end
+			for _, rn in ipairs(rl) do
 				local ok, ref = pcall(function() return nd.o[rn] end)
 				if ok and typeof(ref) == "Instance" and idOf[ref] then
 					lines[#lines + 1] = "set(n[" .. i .. "], " .. string.format("%q", rn) .. ", n[" .. idOf[ref] .. "])"
 				end
+			end
+		end
+		for i, nd in ipairs(nodes) do
+			if nd.o.ClassName == "MeshPart" then
+				local okS, sz = pcall(function() return nd.o.Size end)
+				local okX, tx = pcall(function() return nd.o.TextureID end)
+				local sl = okS and lit(sz)
+				if sl then lines[#lines + 1] = "keepMesh(n[" .. i .. "], " .. sl .. ", " .. string.format("%q", okX and tostring(tx) or "") .. ")" end
 			end
 		end
 		if mode == "tool" then
@@ -40779,6 +43070,24 @@ task.spawn(function()
 		task.wait(0.4)
 	end
 end)
+function L.setPalette(p)
+	local t = mkTheme(p.win, p.title, p.row1, p.row2, p.code, p.btn, p.sel, p.green, p.danger, p.text, p.sub, p.outline)
+	local found = false
+	for _, e in ipairs(THEMES) do
+		if e[1] == "Custom" then
+			e[2] = t
+			found = true
+		end
+	end
+	if not found then THEMES[#THEMES + 1] = { "Custom", t } end
+	cfg.theme = "Custom"
+	cfg.accent = nil
+	applyTheme()
+end
+do
+	local RP = genv.__RPP
+	if RP then RP.CopyApply = L.setPalette end
+end
 genv.__RPP_Copy = L
 
 if HOST then
@@ -40827,7 +43136,7 @@ local UIS = game:GetService("UserInputService")
 local lp = Players.LocalPlayer
 local content = win.GuiElems.Content
 
-local T = {
+local DEF = {
 	bar = Color3.fromRGB(52, 52, 52),
 	back = Color3.fromRGB(32, 32, 32),
 	btn = Color3.fromRGB(60, 60, 60),
@@ -40836,6 +43145,19 @@ local T = {
 	text = Color3.fromRGB(255, 255, 255),
 	sub = Color3.fromRGB(185, 185, 185),
 }
+local T = setmetatable({}, { __index = function(_, k)
+	local th = R and R.GetTheme and R.GetTheme()
+	if not th then return DEF[k] end
+	if k == "bar" then return th.Main1
+	elseif k == "back" then return th.Menu
+	elseif k == "btn" then return th.Button
+	elseif k == "line" then return th.Outline2
+	elseif k == "sel" then return th.ListSelection
+	elseif k == "text" then return th.Text
+	elseif k == "sub" then return th.Text:Lerp(th.Main2, 0.33)
+	end
+	return DEF[k]
+end })
 
 local function new(class, props, parent)
 	local o = Instance.new(class)
@@ -40860,7 +43182,7 @@ local function barBtn(text, w, order)
 	local base = T.btn
 	b:SetAttribute("base", 0)
 	b.MouseEnter:Connect(function() b.BackgroundColor3 = b.BackgroundColor3:Lerp(Color3.new(1, 1, 1), 0.06) end)
-	b.MouseLeave:Connect(function() b.BackgroundColor3 = (b:GetAttribute("on") and T.sel) or base end)
+	b.MouseLeave:Connect(function() b.BackgroundColor3 = (b:GetAttribute("on") and T.sel) or T.btn end)
 	return b
 end
 local heldBtn = barBtn("Held", 46, 1)
@@ -41059,18 +43381,19 @@ local function codeOf()
 	local tool = S.sel
 	if not tool then say("Nothing to copy. Hold a tool first.") return end
 	if not (CP and CP.toolCode) then say("The Copy module is not loaded.") return end
-	local ok, code, count, nsrc, nscripts = pcall(CP.toolCode, tool)
+	local ok, code, count, nsrc, nscripts, sk = pcall(CP.toolCode, tool)
 	if not ok or not code then say("Could not copy " .. tool.Name .. ": " .. tostring(code)) return end
-	return code, tool, count, nsrc, nscripts
+	return code, tool, count, nsrc, nscripts, sk
 end
 
 copyBtn.MouseButton1Click:Connect(function()
-	local code, tool, count, nsrc, nscripts = codeOf()
+	local code, tool, count, nsrc, nscripts, sk = codeOf()
 	if not code then return end
 	local clip = setclipboard or toclipboard or (Clipboard and Clipboard.set)
 	if clip then
 		pcall(clip, code)
-		say(string.format("Copied %s: %d objects, %d/%d scripts.", tool.Name, count or 0, nsrc or 0, nscripts or 0))
+		say(string.format("Copied %s: %d objects, %d/%d scripts%s", tool.Name, count or 0, nsrc or 0, nscripts or 0,
+			(sk and #sk > 0) and (", skipped " .. table.concat(sk, ", ")) or ", nothing skipped"))
 	else
 		say("No clipboard in this executor. Use Download.")
 	end
@@ -41155,7 +43478,28 @@ task.spawn(function()
 	end
 end)
 
+local function refreshColors()
+	bar.BackgroundColor3 = T.bar
+	status.TextColor3 = T.sub
+	area.BackgroundColor3 = T.back
+	empty.TextColor3 = T.sub
+	for _, b in ipairs({ heldBtn, allBtn, zoomOut, zoomIn, copyBtn, dlBtn }) do
+		b.BorderColor3 = T.line
+		b.TextColor3 = T.text
+		b.BackgroundColor3 = b:GetAttribute("on") and T.sel or T.btn
+	end
+	for _, c in ipairs(S.cells) do
+		c.root.BackgroundColor3 = T.back
+		c.stroke.Color = T.sel
+		for _, d in ipairs(c.root:GetChildren()) do
+			if d:IsA("TextLabel") then d.TextColor3 = T.text end
+		end
+	end
+end
+if R then R.ToolRefresh = refreshColors end
+
 genv.__RPP_ToolCleanup = function()
+	if R and R.ToolRefresh == refreshColors then R.ToolRefresh = nil end
 	S.alive = false
 	for _, c in ipairs(S.conns) do pcall(function() c:Disconnect() end) end
 	clear()
