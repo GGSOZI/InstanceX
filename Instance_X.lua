@@ -13264,6 +13264,19 @@ local function main()
 		IgnoreDefaultProps = true,
 		IsolateStarterPlayer = true,
 		SaveEverything = true,
+		SaveGuis = true,
+		SaveBackpack = true,
+		SavePlayerScripts = true,
+		SafeMode = true,
+		MaxInstances = 400000,
+		SaveRemoteLogs = true,
+		OutPlace = true,
+		OutClient = false,
+		ClientAnims = true,
+		Services = {
+			Workspace = true, Lighting = true, ReplicatedStorage = true, ReplicatedFirst = true, StarterGui = true,
+			StarterPack = true, StarterPlayer = true, SoundService = true, Teams = true, Chat = true, Other = true,
+		},
 	}
 
 	local function AddCheckbox(title, default)
@@ -13343,8 +13356,8 @@ local function main()
 
 	SaveInstance.Init = function()
 		window = Lib.Window.new()
-		window:SetTitle("Save Instance")
-		window:Resize(350,350)
+		window:SetTitle("Game Copy")
+		window:Resize(380,470)
 		SaveInstance.Window = window
 
 		ListFrame = Instance.new("ScrollingFrame")
@@ -13387,22 +13400,308 @@ local function main()
 		Padding.PaddingRight = UDim.new(0, 10)
 		Padding.PaddingTop = UDim.new(0, 5)
 
+		local function AddHeader(title)
+			local lbl = Lib.Label.new()
+			lbl.Gui.Parent = ListFrame
+			lbl.Gui.Size = UDim2.new(1, 0, 0, 20)
+			lbl.Gui.Text = title
+			lbl.Gui.Font = Enum.Font.SourceSansBold
+			lbl.Gui.TextXAlignment = Enum.TextXAlignment.Left
+			return lbl
+		end
+
+		local reg = { flag = {}, svc = {}, num = {} }
+		local FLAGS = { "SaveEverything", "SaveGuis", "SaveBackpack", "SavePlayerScripts", "SafeMode", "Decompile", "NilInstances", "RemovePlayerCharacters", "SavePlayers", "IsolateStarterPlayer", "IgnoreDefaultProps", "ShowStatus", "SaveRemoteLogs", "OutPlace", "OutClient", "ClientAnims" }
+		local SVCS = { "Workspace", "Lighting", "ReplicatedStorage", "ReplicatedFirst", "StarterGui", "StarterPack", "StarterPlayer", "SoundService", "Teams", "Chat", "Other" }
+		local NUMS = { "MaxInstances", "DecompileTimeout", "MaxThreads" }
+		local PROFILE_FILE = "InstanceX/copy_profiles.json"
+		local userProfiles = {}
+		pcall(function()
+			if env.isfile and env.readfile and env.isfile(PROFILE_FILE) then
+				local d = service.HttpService:JSONDecode(env.readfile(PROFILE_FILE))
+				if type(d) == "table" then userProfiles = d end
+			end
+		end)
+		local function persistProfiles()
+			pcall(function()
+				if not env.writefile then return end
+				if env.makefolder and env.isfolder and not env.isfolder("InstanceX") then env.makefolder("InstanceX") end
+				env.writefile(PROFILE_FILE, service.HttpService:JSONEncode(userProfiles))
+			end)
+		end
+		local function snapshot()
+			local p = { Services = {} }
+			for _, k in ipairs(FLAGS) do p[k] = SaveInstanceArgs[k] and true or false end
+			for _, k in ipairs(SVCS) do p.Services[k] = SaveInstanceArgs.Services[k] and true or false end
+			for _, k in ipairs(NUMS) do p[k] = SaveInstanceArgs[k] end
+			return p
+		end
+		local function applyProfile(p)
+			for _, k in ipairs(FLAGS) do
+				if type(p[k]) == "boolean" then
+					SaveInstanceArgs[k] = p[k]
+					if reg.flag[k] then pcall(function() reg.flag[k]:SetState(p[k]) end) end
+				end
+			end
+			for _, k in ipairs(SVCS) do
+				local v = p.Services and p.Services[k]
+				if type(v) == "boolean" then
+					SaveInstanceArgs.Services[k] = v
+					if reg.svc[k] then pcall(function() reg.svc[k]:SetState(v) end) end
+				end
+			end
+			for _, k in ipairs(NUMS) do
+				if type(p[k]) == "number" then
+					SaveInstanceArgs[k] = p[k]
+					if reg.num[k] then pcall(function() reg.num[k].Text = tostring(p[k]) end) end
+				end
+			end
+		end
+		local function mk(base, over)
+			local p = { Services = {} }
+			for _, k in ipairs(FLAGS) do p[k] = base[k] end
+			for _, k in ipairs(SVCS) do p.Services[k] = base.Services[k] end
+			for _, k in ipairs(NUMS) do p[k] = base[k] end
+			for k, v in pairs(over) do
+				if k == "Services" then for a, b in pairs(v) do p.Services[a] = b end else p[k] = v end
+			end
+			return p
+		end
+		local allOn = { SaveEverything = true, SaveGuis = true, SaveBackpack = true, SavePlayerScripts = true, SafeMode = true, Decompile = true, NilInstances = false, RemovePlayerCharacters = true, SavePlayers = false, IsolateStarterPlayer = true, IgnoreDefaultProps = true, ShowStatus = true, SaveRemoteLogs = true, OutPlace = true, OutClient = false, ClientAnims = true, MaxInstances = 400000, DecompileTimeout = 10, MaxThreads = 3, Services = {} }
+		for _, k in ipairs(SVCS) do allOn.Services[k] = true end
+		local builtIn = {
+			{ "Complete", mk(allOn, {}), "Everything the client can see, scripts decompiled, remote logs included." },
+			{ "Light", mk(allOn, { SaveEverything = false, SaveGuis = false, SaveBackpack = false, SavePlayerScripts = false, Decompile = false, SaveRemoteLogs = false, MaxInstances = 150000, Services = { Workspace = true, Lighting = true, ReplicatedStorage = true, StarterGui = true, ReplicatedFirst = false, StarterPack = false, StarterPlayer = false, SoundService = false, Teams = false, Chat = false, Other = false } }), "Small and fast. Map, lighting and the main folders only." },
+			{ "GUIs only", mk(allOn, { SaveBackpack = false, SaveRemoteLogs = false, Services = { Workspace = false, Lighting = false, ReplicatedStorage = false, ReplicatedFirst = false, StarterPack = false, StarterPlayer = false, SoundService = false, Teams = false, Chat = false, Other = false } }), "Your ScreenGuis and StarterGui, scripts decompiled." },
+			{ "Systems", mk(allOn, { Services = { Workspace = false, Lighting = false, SoundService = false, Teams = false, Chat = false, Other = false } }), "Scripts and modules areas plus remote logs, no map." },
+			{ "Map only", mk(allOn, { SaveEverything = false, SaveGuis = false, SaveBackpack = false, SavePlayerScripts = false, Decompile = false, SaveRemoteLogs = false, Services = { Workspace = true, Lighting = true, SoundService = true, ReplicatedStorage = false, ReplicatedFirst = false, StarterGui = false, StarterPack = false, StarterPlayer = false, Teams = false, Chat = false, Other = true } }), "Only the world: Workspace, lighting and sounds." },
+			{ "Client script", mk(allOn, { OutPlace = false, OutClient = true }), "Only the client usable .lua you can run. No place file." },
+			{ "Both outputs", mk(allOn, { OutPlace = true, OutClient = true }), "Place file and client usable script together." },
+			{ "Crash proof", mk(allOn, { SafeMode = true, MaxInstances = 120000, MaxThreads = 1, DecompileTimeout = 6 }), "Slow and gentle for weak phones or huge games." },
+		}
+
+		AddHeader("Output (pick one or both)")
+		local outPlace = AddCheckbox("Place file (.rbxl) - the full save, opens in Studio", SaveInstanceArgs.OutPlace)
+		reg.flag.OutPlace = outPlace
+		outPlace.OnInput:Connect(function() SaveInstanceArgs.OutPlace = outPlace.Toggled end)
+		local outClient = AddCheckbox("Client usable script (.lua) - run it in your executor", SaveInstanceArgs.OutClient)
+		reg.flag.OutClient = outClient
+		outClient.OnInput:Connect(function() SaveInstanceArgs.OutClient = outClient.Toggled end)
+		local outAnims = AddCheckbox("   Client script: copy animations frame by frame", SaveInstanceArgs.ClientAnims)
+		reg.flag.ClientAnims = outAnims
+		outAnims.OnInput:Connect(function() SaveInstanceArgs.ClientAnims = outAnims.Toggled end)
+		AddHeader("Copy profiles")
+		local profBox = Instance.new("Frame")
+		profBox.BackgroundTransparency = 1
+		profBox.BorderSizePixel = 0
+		profBox.Size = UDim2.new(1, 0, 0, 0)
+		profBox.AutomaticSize = Enum.AutomaticSize.Y
+		profBox.Parent = ListFrame
+		local pl = Instance.new("UIListLayout")
+		pl.Padding = UDim.new(0, 4)
+		pl.SortOrder = Enum.SortOrder.LayoutOrder
+		pl.Parent = profBox
+		local profStatus
+		local function say(t) if profStatus then profStatus.Text = t end end
+		local function pbtn(parent, text, w, fn)
+			local b = Instance.new("TextButton")
+			b.Size = UDim2.new(0, w, 0, 22)
+			b.Text = text
+			b.AutoButtonColor = false
+			b.BackgroundColor3 = Settings.Theme.Button
+			b.BorderColor3 = Settings.Theme.Outline3
+			b.TextColor3 = Settings.Theme.Text
+			b.Font = Enum.Font.SourceSans
+			b.TextSize = 14
+			b.ZIndex = 2
+			b.Parent = parent
+			b.MouseEnter:Connect(function() b.BackgroundColor3 = Settings.Theme.ButtonHover end)
+			b.MouseLeave:Connect(function() b.BackgroundColor3 = Settings.Theme.Button end)
+			b.MouseButton1Click:Connect(fn)
+			local PI = { Load = "folder", ["Save current"] = "save" }
+			Main.Icon(b, PI[text] or "download", 14)
+			return b
+		end
+		local function prow(order, h)
+			local f = Instance.new("Frame")
+			f.BackgroundTransparency = 1
+			f.BorderSizePixel = 0
+			f.Size = UDim2.new(1, 0, 0, h or 22)
+			f.LayoutOrder = order
+			f.Parent = profBox
+			return f
+		end
+		local presetRow = Instance.new("Frame")
+		presetRow.BackgroundTransparency = 1
+		presetRow.BorderSizePixel = 0
+		presetRow.Size = UDim2.new(1, 0, 0, 0)
+		presetRow.AutomaticSize = Enum.AutomaticSize.Y
+		presetRow.LayoutOrder = 2
+		presetRow.Parent = profBox
+		local gl = Instance.new("UIGridLayout")
+		gl.CellSize = UDim2.new(0, 104, 0, 24)
+		gl.CellPadding = UDim2.new(0, 5, 0, 5)
+		gl.SortOrder = Enum.SortOrder.LayoutOrder
+		gl.Parent = presetRow
+		for i, b in ipairs(builtIn) do
+			local btn = pbtn(presetRow, b[1], 104, function()
+				applyProfile(b[2])
+				say("Profile loaded: " .. b[1] .. ". " .. b[3])
+			end)
+			btn.LayoutOrder = i
+		end
+		do
+			local h = prow(1, 20)
+			local l = Lib.Label.new()
+			l.Gui.Parent = h
+			l.Gui.Size = UDim2.new(1, 0, 1, 0)
+			l.Gui.Text = "Tap a profile to set every option below at once."
+			l.Gui.TextXAlignment = Enum.TextXAlignment.Left
+		end
+		local nameRow = prow(3, 24)
+		local nameBox = Instance.new("TextBox")
+		nameBox.Size = UDim2.new(1, -112, 1, 0)
+		nameBox.BackgroundColor3 = Settings.Theme.TextBox
+		nameBox.BorderColor3 = Settings.Theme.Outline3
+		nameBox.TextColor3 = Settings.Theme.Text
+		nameBox.PlaceholderText = "Name for your own profile"
+		nameBox.PlaceholderColor3 = Settings.Theme.PlaceholderText
+		nameBox.Font = Enum.Font.SourceSans
+		nameBox.TextSize = 14
+		nameBox.Text = ""
+		nameBox.ClearTextOnFocus = false
+		nameBox.TextXAlignment = Enum.TextXAlignment.Left
+		nameBox.ZIndex = 2
+		nameBox.Parent = nameRow
+		local np = Instance.new("UIPadding")
+		np.PaddingLeft = UDim.new(0, 6)
+		np.Parent = nameBox
+		local userHolder = Instance.new("Frame")
+		userHolder.BackgroundTransparency = 1
+		userHolder.BorderSizePixel = 0
+		userHolder.Size = UDim2.new(1, 0, 0, 0)
+		userHolder.AutomaticSize = Enum.AutomaticSize.Y
+		userHolder.LayoutOrder = 5
+		userHolder.Parent = profBox
+		local ul = Instance.new("UIListLayout")
+		ul.Padding = UDim.new(0, 3)
+		ul.SortOrder = Enum.SortOrder.LayoutOrder
+		ul.Parent = userHolder
+		local function rebuildUser()
+			for _, c in ipairs(userHolder:GetChildren()) do
+				if c:IsA("Frame") then c:Destroy() end
+			end
+			local names = {}
+			for n in pairs(userProfiles) do names[#names + 1] = n end
+			table.sort(names)
+			for i, n in ipairs(names) do
+				local r = Instance.new("Frame")
+				r.BackgroundTransparency = 1
+				r.BorderSizePixel = 0
+				r.Size = UDim2.new(1, 0, 0, 24)
+				r.LayoutOrder = i
+				r.Parent = userHolder
+				local lb = Lib.Label.new()
+				lb.Gui.Parent = r
+				lb.Gui.Position = UDim2.new(0, 0, 0, 0)
+				lb.Gui.Size = UDim2.new(1, -140, 1, 0)
+				lb.Gui.Text = n
+				lb.Gui.TextXAlignment = Enum.TextXAlignment.Left
+				lb.Gui.TextTruncate = Enum.TextTruncate.AtEnd
+				local load = pbtn(r, "Load", 64, function()
+					applyProfile(userProfiles[n])
+					say("Profile loaded: " .. n)
+				end)
+				load.AnchorPoint = Vector2.new(1, 0)
+				load.Position = UDim2.new(1, -70, 0, 0)
+				local del = pbtn(r, "Delete", 64, function()
+					userProfiles[n] = nil
+					persistProfiles()
+					rebuildUser()
+					say("Profile deleted: " .. n)
+				end)
+				del.AnchorPoint = Vector2.new(1, 0)
+				del.Position = UDim2.new(1, 0, 0, 0)
+			end
+		end
+		local saveP = pbtn(nameRow, "Save current", 104, function()
+			local n = nameBox.Text:gsub("^%s+", ""):gsub("%s+$", "")
+			if n == "" then return say("Type a name first.") end
+			if #n > 40 then n = n:sub(1, 40) end
+			userProfiles[n] = snapshot()
+			persistProfiles()
+			rebuildUser()
+			nameBox.Text = ""
+			say("Profile saved: " .. n)
+		end)
+		saveP.AnchorPoint = Vector2.new(1, 0)
+		saveP.Position = UDim2.new(1, 0, 0, 0)
+		rebuildUser()
+		do
+			local sr = prow(6, 18)
+			profStatus = Lib.Label.new().Gui
+			profStatus.Parent = sr
+			profStatus.Size = UDim2.new(1, 0, 1, 0)
+			profStatus.Text = ""
+			profStatus.TextXAlignment = Enum.TextXAlignment.Left
+		end
+
+		AddHeader("What to copy")
 		local Everything = AddCheckbox("Copy everything (ScreenGuis, tools, player scripts)", SaveInstanceArgs.SaveEverything)
+		reg.flag.SaveEverything = Everything
 		Everything.OnInput:Connect(function()
 			SaveInstanceArgs.SaveEverything = Everything.Toggled
 		end)
+		local subDefs = {
+			{ "   My ScreenGuis (PlayerGui)", "SaveGuis" },
+			{ "   My Backpack tools", "SaveBackpack" },
+			{ "   My player scripts", "SavePlayerScripts" },
+		}
+		for _, d in ipairs(subDefs) do
+			local cb = AddCheckbox(d[1], SaveInstanceArgs[d[2]])
+			reg.flag[d[2]] = cb
+			cb.OnInput:Connect(function() SaveInstanceArgs[d[2]] = cb.Toggled end)
+		end
+		local svcDefs = {
+			{ "Workspace", "Workspace" }, { "Lighting", "Lighting" }, { "ReplicatedStorage", "ReplicatedStorage" },
+			{ "ReplicatedFirst", "ReplicatedFirst" }, { "StarterGui", "StarterGui" }, { "StarterPack", "StarterPack" },
+			{ "StarterPlayer", "StarterPlayer" }, { "SoundService", "SoundService" }, { "Teams", "Teams" },
+			{ "Chat / TextChatService", "Chat" }, { "Other services (Material, Localization...)", "Other" },
+		}
+		for _, d in ipairs(svcDefs) do
+			local cb = AddCheckbox(d[1], SaveInstanceArgs.Services[d[2]])
+			reg.svc[d[2]] = cb
+			cb.OnInput:Connect(function() SaveInstanceArgs.Services[d[2]] = cb.Toggled end)
+		end
+
+		AddHeader("Safety (stops crashes)")
+		local Safe = AddCheckbox("Smooth mode (less lag, never freezes the game)", SaveInstanceArgs.SafeMode)
+		reg.flag.SafeMode = Safe
+		Safe.OnInput:Connect(function() SaveInstanceArgs.SafeMode = Safe.Toggled end)
+		local MaxInst = AddTextbox("Max instances to save", SaveInstanceArgs.MaxInstances, 70)
+		reg.num.MaxInstances = MaxInst.TextBox
+		MaxInst.TextBox.FocusLost:Connect(function()
+			local v = tonumber(MaxInst.TextBox.Text)
+			if v then SaveInstanceArgs.MaxInstances = math.clamp(math.floor(v), 1000, 5000000) end
+			MaxInst.TextBox.Text = tostring(SaveInstanceArgs.MaxInstances)
+		end)
+
+		AddHeader("Scripts")
 
 		local Decompile = AddCheckbox("Decompile Scripts (LocalScript and ModuleScript)", SaveInstanceArgs.Decompile)
+		reg.flag.Decompile = Decompile
 		Decompile.OnInput:Connect(function()
 			SaveInstanceArgs.Decompile = Decompile.Toggled
 		end)
 
 		local decompileTimeout = AddTextbox("Decompile Timeout (s)", SaveInstanceArgs.DecompileTimeout, 15)
+		reg.num.DecompileTimeout = decompileTimeout.TextBox
 		decompileTimeout.TextBox.FocusLost:Connect(function()
 			SaveInstanceArgs.DecompileTimeout = tonumber(decompileTimeout.TextBox.Text)
 		end)
 
 		local decompileThread = AddTextbox("Decompiler Max Threads", "3", 15)
+		reg.num.MaxThreads = decompileThread.TextBox
 		decompileThread.TextBox.FocusLost:Connect(function()
 			SaveInstanceArgs.MaxThreads = tonumber(decompileThread.TextBox.Text)
 		end)
@@ -13423,31 +13722,40 @@ local function main()
 		end)
 
 		local NilObj = AddCheckbox("Save Nil Instances", SaveInstanceArgs.NilInstances)
+		reg.flag.NilInstances = NilObj
 		NilObj.OnInput:Connect(function()
 			SaveInstanceArgs.NilInstances = NilObj.Toggled
 		end)
 
 		local RemovePlayerChar = AddCheckbox("Remove Player Characters", SaveInstanceArgs.RemovePlayerCharacters)
+		reg.flag.RemovePlayerCharacters = RemovePlayerChar
 		RemovePlayerChar.OnInput:Connect(function()
 			SaveInstanceArgs.RemovePlayerCharacters = RemovePlayerChar.Toggled
 		end)
 
 		local SavePlayerObj = AddCheckbox("Save Player Instance", SaveInstanceArgs.SavePlayers)
+		reg.flag.SavePlayers = SavePlayerObj
 		SavePlayerObj.OnInput:Connect(function()
 			SaveInstanceArgs.SavePlayers = SavePlayerObj.Toggled
 		end)
 
 		local IsolateStarterPlr = AddCheckbox("Isolate StarterPlayer", SaveInstanceArgs.IsolateStarterPlayer)
+		reg.flag.IsolateStarterPlayer = IsolateStarterPlr
 		IsolateStarterPlr.OnInput:Connect(function()
 			SaveInstanceArgs.IsolateStarterPlayer = IsolateStarterPlr.Toggled
 		end)
 
 		local IgnoreDefaultProps = AddCheckbox("Ignore Default Properties", SaveInstanceArgs.IgnoreDefaultProps)
+		reg.flag.IgnoreDefaultProps = IgnoreDefaultProps
 		IgnoreDefaultProps.OnInput:Connect(function()
 			SaveInstanceArgs.IgnoreDefaultProps = IgnoreDefaultProps.Toggled
 		end)
 
 		local ShowStat = AddCheckbox("Show Status", SaveInstanceArgs.ShowStatus)
+		reg.flag.ShowStatus = ShowStat
+		local RemLogs = AddCheckbox("Save Remote Spy logs with the copy (side file + ReplicatedStorage)", SaveInstanceArgs.SaveRemoteLogs)
+		reg.flag.SaveRemoteLogs = RemLogs
+		RemLogs.OnInput:Connect(function() SaveInstanceArgs.SaveRemoteLogs = RemLogs.Toggled end)
 		ShowStat.OnInput:Connect(function()
 			SaveInstanceArgs.ShowStatus = ShowStat.Toggled
 		end)
@@ -13471,7 +13779,7 @@ local function main()
 		LabelButton.Gui.Parent = window.GuiElems.Content
 		LabelButton.Size = UDim2.new(1,0, 0,20)
 		LabelButton.Position = UDim2.new(0,0, 1,-20)
-		LabelButton.Gui.Text = "Save"
+		LabelButton.Gui.Text = "Copy game"
 		LabelButton.Gui.TextXAlignment = Enum.TextXAlignment.Center
 
 		local Button = Instance.new("TextButton")
@@ -13482,22 +13790,91 @@ local function main()
 
 		FilenameTextBox.TextBox.Text = fileName
 		Button.MouseButton1Click:Connect(function()
+			if Saving then return end
+			Saving = true
 			local fileName = FilenameTextBox.TextBox.Text:gsub("{TIMESTAMP}", os.date("%d-%m-%Y_%H-%M-%S"))
-			window:SetTitle("Save Instance - Saving")
+			window:SetTitle("Game Copy - Saving")
 			local args = {}
 			for k, v in pairs(SaveInstanceArgs) do args[k] = v end
 			args.ProgressCallback = function(d, t)
-				pcall(function() window:SetTitle("Save Instance - Saving "..d.."/"..t) end)
+				pcall(function() window:SetTitle("Game Copy - Saving "..d.."/"..t) end)
 			end
-			local s, result = pcall(env.saveinstance, game, fileName, args)
-			if s then
-				window:SetTitle("Save Instance - Saved")
-			else
-				window:SetTitle("Save Instance - Error")
-				warn("Failed to save the game: "..tostring(result))
+			local logFolder
+			if args.SaveRemoteLogs then
+				pcall(function()
+					local RR = (getgenv or function() return _G end)().__RPP
+					if not (RR and RR.SpyExport) then return end
+					local modTxt, scrTxt = RR.SpyExport("module"), RR.SpyExport("script")
+					if not modTxt then return end
+					local base = tostring(fileName):gsub("%.rbxlx?$", ""):gsub("%.rbxmx?$", "")
+					if env.writefile then
+						pcall(env.writefile, base .. "_remotelog.lua", scrTxt or modTxt)
+						pcall(env.writefile, base .. "_remotelog_data.lua", modTxt)
+					end
+					if SaveInstanceArgs.Services.ReplicatedStorage then
+						local f = Instance.new("Folder")
+						f.Name = "InstanceX_RemoteLogs"
+						local function sv(name, text)
+							local v = Instance.new("StringValue")
+							v.Name = name
+							v.Value = #text > 900000 and text:sub(1, 900000) or text
+							v.Parent = f
+						end
+						sv("RemoteLog_Data (paste in a ModuleScript)", modTxt)
+						if scrTxt then sv("RemoteLog_Replay (script)", scrTxt) end
+						f.Parent = game:GetService("ReplicatedStorage")
+						logFolder = f
+					end
+				end)
 			end
+			local msgs = {}
+			if not args.OutPlace and not args.OutClient then
+				args.OutPlace = true
+				msgs[#msgs + 1] = "No output picked, saving the place file."
+			end
+			if args.OutClient then
+				local Lg = (getgenv or function() return _G end)().__RPP_Logger
+				if Lg and Lg.saveClient then
+					local fin = false
+					local cname = tostring(fileName):gsub("%.rbxlx?$", ""):gsub("[^%w%-_ %.]", "")
+					if cname == "" then cname = "Game" end
+					local o = {
+						Services = args.Services, SaveGuis = args.SaveGuis, SaveBackpack = args.SaveBackpack, Decompile = args.Decompile,
+						Anims = args.ClientAnims, RemoteLogs = args.SaveRemoteLogs, SafeMode = args.SafeMode,
+					}
+					local okC, errC = pcall(Lg.saveClient, cname, function(t)
+						pcall(function() window:SetTitle("Game Copy - " .. tostring(t)) end)
+					end, function(okDone, info)
+						msgs[#msgs + 1] = okDone and ("Client script saved: " .. tostring(info)) or ("Client script failed: " .. tostring(info))
+						fin = true
+					end, o)
+					if not okC then
+						msgs[#msgs + 1] = "Client script failed: " .. tostring(errC)
+						fin = true
+					end
+					local t0 = os.clock()
+					while not fin and os.clock() - t0 < 1200 do task.wait(0.25) end
+				else
+					msgs[#msgs + 1] = "Client script: the Recorder module is still loading, try again in a few seconds."
+				end
+			end
+			local s, result = true, nil
+			if args.OutPlace then
+				window:SetTitle("Game Copy - Saving place")
+				s, result = pcall(env.saveinstance, game, fileName, args)
+				if s then
+					msgs[#msgs + 1] = "Place file saved: " .. tostring(fileName)
+				else
+					msgs[#msgs + 1] = "Place file failed: " .. tostring(result)
+					warn("Failed to save the game: "..tostring(result))
+				end
+			end
+			if logFolder then pcall(function() logFolder:Destroy() end) end
+			say(table.concat(msgs, "  "))
+			window:SetTitle(s and "Game Copy - Done" or "Game Copy - Error")
 			task.wait(5)
-			window:SetTitle("Save Instance")
+			window:SetTitle("Game Copy")
+			Saving = false
 		end)
 	end
 
@@ -14212,6 +14589,139 @@ local function main()
 		end)
 		refreshColors()
 
+		AddSeperator("Windows")
+		AddText("Tick to open, untick to close.")
+		local winChecks, syncing = {}, false
+		local winFilter = ""
+		local function applyWinFilter()
+			for _, w in ipairs(winChecks) do
+				pcall(function()
+					w.row.Visible = winFilter == "" or (w.name:lower():find(winFilter, 1, true) ~= nil)
+				end)
+			end
+		end
+		do
+			local sb = Instance.new("TextBox")
+			sb.BackgroundColor3 = Settings.Theme.TextBox
+			sb.BorderColor3 = Settings.Theme.Outline3
+			sb.TextColor3 = Settings.Theme.Text
+			sb.PlaceholderText = "Search windows..."
+			sb.PlaceholderColor3 = Settings.Theme.PlaceholderText
+			sb.Font = Enum.Font.SourceSans
+			sb.TextSize = 14
+			sb.Text = ""
+			sb.ClearTextOnFocus = false
+			sb.TextXAlignment = Enum.TextXAlignment.Left
+			sb.Size = UDim2.new(1, 0, 0, 22)
+			sb.ZIndex = 2
+			sb.Parent = ListFrame
+			local pad = Instance.new("UIPadding")
+			pad.PaddingLeft = UDim.new(0, 6)
+			pad.Parent = sb
+			sb:GetPropertyChangedSignal("Text"):Connect(function()
+				winFilter = sb.Text:lower()
+				applyWinFilter()
+			end)
+		end
+		local winHolder = Instance.new("Frame")
+		winHolder.BackgroundTransparency = 1
+		winHolder.BorderSizePixel = 0
+		winHolder.Size = UDim2.new(1, 0, 0, 0)
+		winHolder.AutomaticSize = Enum.AutomaticSize.Y
+		winHolder.Parent = ListFrame
+		local winLayout = Instance.new("UIListLayout")
+		winLayout.Padding = UDim.new(0, 5)
+		winLayout.Parent = winHolder
+		AddButton("Only Explorer + Properties", function()
+			for _, w in ipairs(winChecks) do
+				local keep = (w.ctl == Main.MenuApps["Explorer"]) or (w.ctl == Main.MenuApps["Properties"])
+				if keep then w.ctl.Enable() else w.ctl.Disable() end
+			end
+		end)
+		AddButton("Close every window", function()
+			for _, w in ipairs(winChecks) do w.ctl.Disable() end
+		end)
+		do
+			local apps = Main.MenuApps
+			task.spawn(function()
+				local waited = 0
+				while Main.MenuApps == apps and not next(apps) and waited < 40 do
+					task.wait(0.25)
+					waited = waited + 1
+				end
+				if Main.MenuApps ~= apps then return end
+				local order = {}
+				for name in pairs(apps) do order[#order + 1] = name end
+				table.sort(order)
+				for _, name in ipairs(order) do
+					local ctl = apps[name]
+					if ctl and ctl.IsOpen and name ~= "Settings" then
+						local cb = AddCheckbox(name, ctl.IsOpen())
+						pcall(function() cb.Gui.Parent.Parent = winHolder end)
+						cb.OnInput:Connect(function()
+							if syncing then return end
+							if cb.Toggled then ctl.Enable() else ctl.Disable() end
+						end)
+						winChecks[#winChecks + 1] = { cb = cb, ctl = ctl, name = name, row = cb.Gui.Parent }
+					end
+				end
+				applyWinFilter()
+				while Main.MenuApps == apps do
+					syncing = true
+					for _, w in ipairs(winChecks) do
+						pcall(function()
+							local st = w.ctl.IsOpen()
+							if w.cb.Toggled ~= st then w.cb:SetState(st) end
+						end)
+					end
+					syncing = false
+					task.wait(0.7)
+				end
+			end)
+		end
+
+		AddSeperator("Look (Recorder / Copy / Tool)")
+		AddText("Explorer style, less cramped.")
+		local skinDrop = AddDropdown("Look of Recorder / Copy / Spy / Game Copy (Classic = flat like the Explorer)", {"Classic", "Accent"}, Main.Options.Look, false, 100)
+		skinDrop.OnSelect:Connect(function()
+			Main.Options.Look = skinDrop.Selected
+			Main.SaveOptions()
+			task.spawn(function()
+				if Main.Options.Look == "Accent" then
+					Main.SkinWindows()
+					Main.RestyleAll()
+					Main.SkinRefresh()
+				else
+					Main.UnskinAll()
+					Main.RestyleAll()
+				end
+			end)
+		end)
+		local look = AddCheckbox("Explorer style windows", Main.Options.Restyle)
+		look.OnInput:Connect(function()
+			Main.Options.Restyle = look.Toggled
+			Main.SaveOptions()
+			if look.Toggled then task.spawn(Main.RestyleAll) end
+		end)
+		local wcorner = AddTextbox("Window corners (0 = flat)", tostring(Main.Options.WindowCorner), 30)
+		wcorner.FocusLost:Connect(function()
+			local v = tonumber(wcorner.Text)
+			if v then Main.Options.WindowCorner = math.clamp(math.floor(v), 0, 12) end
+			wcorner.Text = tostring(Main.Options.WindowCorner)
+			local R = (getgenv or function() return _G end)().__RPP
+			if R then R.WindowCorner = Main.Options.WindowCorner end
+			Main.SaveOptions()
+			task.spawn(Main.RestyleAll)
+		end)
+		local minText = AddTextbox("Smallest text size (12-22)", tostring(Main.Options.MinTextSize), 30)
+		minText.FocusLost:Connect(function()
+			local v = tonumber(minText.Text)
+			if v then Main.Options.MinTextSize = math.clamp(math.floor(v), 12, 22) end
+			minText.Text = tostring(Main.Options.MinTextSize)
+			Main.SaveOptions()
+			task.spawn(Main.RestyleAll)
+		end)
+
 		AddSeperator("Menu button")
 		local btnText = AddTextbox("Button text", Main.Options.ButtonText, 90)
 		btnText.FocusLost:Connect(function()
@@ -14247,6 +14757,11 @@ local function main()
 		local autoOpen = AddCheckbox("Open the menu on start", Main.Options.AutoOpen)
 		autoOpen.OnInput:Connect(function()
 			Main.Options.AutoOpen = autoOpen.Toggled
+			Main.SaveOptions()
+		end)
+		local spyAuto = AddCheckbox("Start Remote Spy on execute (needed for the game copy logs)", Main.Options.SpyAuto)
+		spyAuto.OnInput:Connect(function()
+			Main.Options.SpyAuto = spyAuto.Toggled
 			Main.SaveOptions()
 		end)
 		local keyDrop = AddDropdown("Hide / show all key", {"None", "RightShift", "RightControl", "Insert", "Home", "End", "Delete"}, Main.Options.ToggleKey, false, 100)
@@ -14865,8 +15380,11 @@ Main = (function()
 
 			local ids, kids, order = {}, {}, 0
 			local lastYield = os.clock()
+			local sliceT = options.SafeMode ~= false and 0.008 or 0.022
+			local maxInst = tonumber(options.MaxInstances) or 400000
+			local capped = false
 			local function slice()
-				if os.clock() - lastYield > 0.03 then
+				if os.clock() - lastYield > sliceT then
 					task.wait()
 					lastYield = os.clock()
 				end
@@ -14898,13 +15416,13 @@ Main = (function()
 				end
 				pcall(function()
 					local sg, pg = game:FindService("StarterGui"), lp and lp:FindFirstChildOfClass("PlayerGui")
-					if sg and pg then extra[sg] = newOnes(pg, sg) end
+					if sg and pg and options.SaveGuis ~= false then extra[sg] = newOnes(pg, sg) end
 					local sp, bp = game:FindService("StarterPack"), lp and lp:FindFirstChildOfClass("Backpack")
-					if sp and bp then extra[sp] = newOnes(bp, sp) end
+					if sp and bp and options.SaveBackpack ~= false then extra[sp] = newOnes(bp, sp) end
 					local stp = game:FindService("StarterPlayer")
 					local sps = stp and stp:FindFirstChild("StarterPlayerScripts")
 					local ps = lp and lp:FindFirstChild("PlayerScripts")
-					if sps and ps then extra[sps] = newOnes(ps, sps) end
+					if sps and ps and options.SavePlayerScripts ~= false then extra[sps] = newOnes(ps, sps) end
 				end)
 			end
 			local function keep(o)
@@ -14920,6 +15438,11 @@ Main = (function()
 			local function build(o)
 				order += 1
 				ids[o] = "RBX" .. order
+				if order >= maxInst then
+					capped = true
+					kids[o] = {}
+					return
+				end
 				local list = {}
 				local okC, ch = pcall(o.GetChildren, o)
 				if okC then
@@ -14945,9 +15468,12 @@ Main = (function()
 					"VoiceChatService", "ServerScriptService", "ServerStorage",
 				}
 				if options.SavePlayers then table.insert(names, 1, "Players") end
+				local svKey = { TextChatService = "Chat", Chat = "Chat", MaterialService = "Other", LocalizationService = "Other",
+					TestService = "Other", VoiceChatService = "Other", ServerScriptService = "Other", ServerStorage = "Other" }
+				local sv = options.Services or {}
 				for _, n in ipairs(names) do
 					local okS, svc = pcall(function() return game:FindService(n) end)
-					if okS and svc then roots[#roots + 1] = svc end
+					if okS and svc and sv[svKey[n] or n] ~= false then roots[#roots + 1] = svc end
 				end
 				if options.NilInstances and env.getnilinstances then
 					local okN, nils = pcall(env.getnilinstances)
@@ -15133,17 +15659,72 @@ Main = (function()
 				end
 				return false
 			end
+			local decompileOn = options.Decompile ~= false
+			local failStreak = 0
+			local function runDecompile(o)
+				local result, done
+				task.spawn(function()
+					local ok, r = pcall(env.decompile, o)
+					if ok and type(r) == "string" then result = r end
+					done = true
+				end)
+				local t0 = os.clock()
+				while not done and os.clock() - t0 < timeout do task.wait() end
+				return result, done
+			end
+			-- decompile several scripts at the same time while the file is being written
+			local srcCache, queued = {}, {}
+			if decompileOn and canDecompile then
+				task.spawn(function()
+					local okL, list = pcall(function() return obj:GetDescendants() end)
+					if not okL then return end
+					local queue = {}
+					for i, d in ipairs(list) do
+						if d:IsA("LuaSourceContainer") and not ignored(d) and (not env.isViableDecompileScript or env.isViableDecompileScript(d)) then
+							queue[#queue + 1] = d
+							queued[d] = true
+							if #queue >= 6000 then break end
+						end
+						if i % 2000 == 0 then task.wait() end
+					end
+					local nextI = 1
+					for _ = 1, math.clamp(tonumber(options.MaxThreads) or 3, 1, 8) do
+						task.spawn(function()
+							while decompileOn do
+								local i = nextI
+								if i > #queue then break end
+								nextI = i + 1
+								local d = queue[i]
+								if d.Parent ~= nil or true then
+									local r, dn = runDecompile(d)
+									srcCache[d] = { r = r, done = dn }
+								end
+							end
+						end)
+					end
+				end)
+			end
 			local function getSource(o)
-				if options.Decompile ~= false and canDecompile and not ignored(o) and (not env.isViableDecompileScript or env.isViableDecompileScript(o)) then
+				if decompileOn and canDecompile and not ignored(o) and (not env.isViableDecompileScript or env.isViableDecompileScript(o)) then
 					local result, done
-					task.spawn(function()
-						local ok, r = pcall(env.decompile, o)
-						if ok and type(r) == "string" then result = r end
-						done = true
-					end)
-					local t0 = os.clock()
-					while not done and os.clock() - t0 < timeout do task.wait() end
-					if result and result ~= "" then return result end
+					local c = srcCache[o]
+					if not c and queued[o] then
+						local t0 = os.clock()
+						while not srcCache[o] and os.clock() - t0 < timeout + 3 do task.wait() end
+						c = srcCache[o]
+					end
+					if c then
+						srcCache[o] = nil
+						result, done = c.r, c.done
+					else
+						result, done = runDecompile(o)
+					end
+					if result and result ~= "" then
+						failStreak = 0
+						return result
+					end
+					failStreak += 1
+					if failStreak >= 4 then decompileOn = false end
 					return "-- could not decompile " .. o.Name .. (done and " (empty result)" or " (timed out)")
 				end
 				local ok, s = pcall(function() return o.Source end)
@@ -15244,6 +15825,11 @@ Main = (function()
 				writefile_(fullPath, table.concat(buf))
 			end
 			if options.ProgressCallback then pcall(options.ProgressCallback, total, total) end
+			if capped then
+				pcall(function()
+					game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Save Instance", Text = "Stopped adding objects at " .. maxInst .. " (Max instances).", Duration = 6 })
+				end)
+			end
 			return fullPath
 		end
 
@@ -15320,6 +15906,19 @@ Main = (function()
 						end)
 						if #ign > 0 then o2.IgnoreList = ign end
 					end
+					if type(options.Services) == "table" and obj == game then
+						local keyOf = { TextChatService = "Chat", MaterialService = "Other", LocalizationService = "Other", TestService = "Other",
+							VoiceChatService = "Other", ServerScriptService = "Other", ServerStorage = "Other" }
+						local ign2 = o2.IgnoreList or {}
+						for _, n in ipairs({"Workspace","Lighting","ReplicatedStorage","ReplicatedFirst","StarterGui","StarterPack","StarterPlayer","SoundService","Teams","Chat","TextChatService","MaterialService","LocalizationService","TestService","VoiceChatService"}) do
+							if options.Services[keyOf[n] or n] == false then
+								local okS, svc = pcall(function() return game:FindService(n) end)
+								if okS and svc then ign2[#ign2 + 1] = svc end
+							end
+						end
+						if #ign2 > 0 then o2.IgnoreList = ign2 end
+					end
+					if options.SafeMode ~= false then o2.MaxThreads = math.min(tonumber(o2.MaxThreads) or 3, 3) end
 					return o2
 				end
 
@@ -16034,11 +16633,25 @@ Main = (function()
 		return {SetProgress = setProgress, Close = close, Object = gui}
 	end
 
+	Main.IconQ = {}
+	Main.Icon = function(btn, key, size)
+		if Main.IconHook then
+			pcall(Main.IconHook, btn, key, size)
+		else
+			Main.IconQ[#Main.IconQ + 1] = { btn, key, size }
+		end
+	end
+	Main.AppPriority = {
+		["Explorer"] = 1, ["Properties"] = 2, ["Remote Spy"] = 3, ["Game Copy"] = 4, ["Settings"] = 5,
+		["Recorder"] = 6, ["Copy"] = 7, ["Tool Copy"] = 8, ["Console"] = 9, ["Notepad"] = 10,
+	}
 	Main.CreateApp = function(data)
 		if Main.MenuApps[data.Name] then return end
 		local control = {}
 
 		local app = Main.AppTemplate:Clone()
+		Main.AppCount = (Main.AppCount or 0) + 1
+		app.LayoutOrder = (Main.AppPriority[data.Name] or 100) * 100 + Main.AppCount
 
 		local iconIndex = data.Icon
 		if data.IconMap and iconIndex then
@@ -16114,6 +16727,8 @@ Main = (function()
 
 		control.Enable = enable
 		control.Disable = disable
+		control.IsOpen = function() return data.Open and true or false end
+		control.Window = data.Window
 		Main.MenuApps[data.Name] = control
 		return control
 	end
@@ -16219,14 +16834,20 @@ Main = (function()
 			if isInfoCD then return end
 			isInfoCD = true
 			if not infoDexIntro then
-				infoDexIntro = Main.CreateIntro("Running")
+				local myIntro = Main.CreateIntro("Credits")
+				infoDexIntro = myIntro
 				coroutine.wrap(function()
-					while infoDexIntro and openButton.Parent ~= nil do
-						for i,text in Infos do
-							if not infoDexIntro or openButton.Parent == nil then break end
-							infoDexIntro.SetProgress(text,(1 / #Infos) * i)
-							task.wait(duration)
-						end
+					for i, text in ipairs(Infos) do
+						if infoDexIntro ~= myIntro or openButton.Parent == nil then return end
+						myIntro.SetProgress(text, (1 / #Infos) * i)
+						task.wait(1.3)
+					end
+					if infoDexIntro ~= myIntro then return end
+					myIntro.SetProgress("Thanks for using InstanceX", 1)
+					task.wait(1.5)
+					if infoDexIntro == myIntro then
+						infoDexIntro = nil
+						myIntro.Close()
 					end
 				end)()
 
@@ -16249,6 +16870,7 @@ Main = (function()
 		Main.CreateApp({Name = "Settings", IconMap = Main.LargeIcons, Icon = "Output", Window = SettingsWindow.Window})
 		Main.CreateApp({Name = "Copy", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = Main.CopyWin})
 		Main.CreateApp({Name = "Tool Copy", IconMap = Main.LargeIcons, Icon = "Honey", Window = Main.ToolWin})
+		Main.CreateApp({Name = "Remote Spy", IconMap = Main.LargeIcons, Icon = "Watcher", Window = Main.SpyWin})
 		Main.CreateApp({Name = "3D Viewer", IconMap = Main.LargeIcons, Icon = "Object", Window = ModelViewer.Window})
 		local function actionApp(name, icon, fnName)
 			local ctl
@@ -16274,7 +16896,6 @@ Main = (function()
 		actionApp("Saved", "Book", "openSaved")
 		actionApp("NPC Hit", "Watcher", "openNpc")
 		actionApp("Design Script", "Script_Viewer", "openDesign")
-		actionApp("Save Game", "Book", "openSaveGame")
 
 		local cptsOnMouseClick = nil
 		local cptsCtl
@@ -17142,7 +17763,7 @@ Main = (function()
 
 		Main.CreateApp({Name = "Console", IconMap = Main.LargeIcons, Icon = "Executor", Window = Console.Window})
 
-		Main.CreateApp({Name = "Save Instance", IconMap = Main.LargeIcons, Icon = "Book", Window = SaveInstance.Window})
+		Main.CreateApp({Name = "Game Copy", IconMap = Main.LargeIcons, Icon = "Book", Window = SaveInstance.Window})
 
 		for _, loadedplugin in pairs(Main.Plugins) do
 			Main.CreateApp({Name = loadedplugin.PluginData.FriendlyName, IconMap = Explorer.ClassIcons, Icon = "Attachment", Window = loadedplugin.Window})
@@ -17287,6 +17908,7 @@ Main = (function()
 	Main.DefaultOptions = function()
 		return {
 			ButtonAlpha = 0.2, ButtonText = "InstanceX", ButtonSize = "Normal", Corner = 4, ToggleKey = "None", AutoOpen = false,
+			WindowCorner = 0, MinTextSize = 14, Restyle = true, SpyAuto = true, Look = "Classic",
 			Tool = { scripts = true, sounds = true, anims = true, fx = true, gui = true, attrs = true, other = true },
 		}
 	end
@@ -17317,6 +17939,8 @@ Main = (function()
 		end)
 		o.ButtonAlpha = math.clamp(o.ButtonAlpha, 0, 0.8)
 		o.Corner = math.clamp(math.floor(o.Corner), 0, 16)
+		o.WindowCorner = math.clamp(math.floor(o.WindowCorner), 0, 12)
+		o.MinTextSize = math.clamp(math.floor(o.MinTextSize), 12, 22)
 		if o.ButtonText == "" then o.ButtonText = "InstanceX" end
 		Main.Options = o
 		local g = (getgenv or function() return _G end)()
@@ -17340,6 +17964,195 @@ Main = (function()
 		end
 	end
 
+	-- Explorer-like look for the Recorder / Copy / Tool windows: flat corners, air between rows, readable text
+	Main.StyleBase = function(o)
+		if o.Name == "IXSkin" and o:IsA("UICorner") then pcall(function() o:Destroy() end) return end
+		local opt = Main.Options
+		if not opt.Restyle then return end
+		pcall(function()
+			if o:IsA("UICorner") then
+				if o.Name == "IXSkin" then return end
+				if o.CornerRadius.Scale == 0 and o.CornerRadius.Offset <= 12 then
+					o.CornerRadius = UDim.new(0, opt.WindowCorner)
+				end
+			elseif o:IsA("UIListLayout") then
+				if o.FillDirection == Enum.FillDirection.Vertical and o.Padding.Scale == 0 and o.Padding.Offset < 4 then
+					o.Padding = UDim.new(0, 4)
+				end
+			elseif o:IsA("ScrollingFrame") then
+				if o.ScrollBarThickness < 8 then o.ScrollBarThickness = 8 end
+			elseif o:IsA("TextButton") or o:IsA("TextBox") then
+				if not o.TextScaled and o.TextSize < opt.MinTextSize then o.TextSize = opt.MinTextSize end
+				local par = o.Parent
+				if par and o.AutomaticSize == Enum.AutomaticSize.None and o.Size.Y.Scale == 0
+					and o.Size.Y.Offset >= 12 and o.Size.Y.Offset < 26 and par:FindFirstChildOfClass("UIListLayout")
+					and par:FindFirstChildOfClass("UIListLayout").FillDirection == Enum.FillDirection.Vertical then
+					o.Size = UDim2.new(o.Size.X.Scale, o.Size.X.Offset, 0, 26)
+				end
+			elseif o:IsA("TextLabel") then
+				if not o.TextScaled and o.TextSize < opt.MinTextSize then o.TextSize = opt.MinTextSize end
+			end
+		end)
+	end
+
+	local function skinAccent()
+		return (Main.Palette and Main.Palette.sel) or Settings.Theme.ListSelection
+	end
+	local FONT_MAP = {
+		[Enum.Font.SourceSans] = Enum.Font.GothamMedium, [Enum.Font.SourceSansSemibold] = Enum.Font.GothamMedium,
+		[Enum.Font.SourceSansBold] = Enum.Font.GothamBold, [Enum.Font.Arial] = Enum.Font.GothamMedium,
+		[Enum.Font.ArialBold] = Enum.Font.GothamBold, [Enum.Font.Legacy] = Enum.Font.GothamMedium,
+	}
+	local function addStroke(o, thick, transp)
+		local st = Instance.new("UIStroke")
+		st.Name = "IXSkin"
+		st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		st.Color = skinAccent()
+		st.Thickness = thick
+		st.Transparency = transp
+		st.Parent = o
+		return st
+	end
+	Main.SkinObject = function(o)
+		if Main.Options.Look ~= "Accent" then return end
+		pcall(function()
+			if o.Name == "IXSkin" or o.Name == "IXSkinBar" then return end
+			if false then
+				if o:GetAttribute("IXFont") == nil then
+					local nf = FONT_MAP[o.Font]
+					if nf then
+						o:SetAttribute("IXFont", o.Font.Name)
+						o:SetAttribute("IXSize", o.TextSize)
+						o.Font = nf
+						if not o.TextScaled and o.TextSize >= 14 then o.TextSize = o.TextSize - 1 end
+					end
+				end
+			end
+			if o:IsA("TextButton") then
+				if o.BackgroundTransparency < 0.95 and o.Text ~= "" and not o:FindFirstChild("IXSkin") then
+					o.BorderSizePixel = 0
+					local st = addStroke(o, 1, 0.7)
+					o.MouseEnter:Connect(function() st.Transparency = 0.1 end)
+					o.MouseLeave:Connect(function() st.Transparency = 0.7 end)
+				end
+			elseif o:IsA("TextBox") then
+				if o.BackgroundTransparency < 0.95 and not o:FindFirstChild("IXSkin") then
+					o.BorderSizePixel = 0
+					local st = addStroke(o, 1, 0.75)
+					o.Focused:Connect(function() st.Transparency = 0.05 end)
+					o.FocusLost:Connect(function() st.Transparency = 0.75 end)
+				end
+			elseif o:IsA("ScrollingFrame") then
+				o.ScrollBarThickness = math.min(o.ScrollBarThickness, 6)
+				if o.ScrollBarThickness < 6 then o.ScrollBarThickness = 6 end
+				o.ScrollBarImageColor3 = skinAccent()
+			end
+		end)
+	end
+	Main.StyleObject = function(o)
+		local opt = Main.Options
+		if opt.Restyle then Main.StyleBase(o) end
+		if opt.Look == "Accent" then Main.SkinObject(o) end
+	end
+	local function skinWinList()
+		local list = {}
+		for _, w in ipairs({Main.RecorderWin, Main.CopyWin, Main.ToolWin, Main.SpyWin, Main.SpyCodeWin, SaveInstance and SaveInstance.Window}) do
+			if w then list[#list + 1] = w end
+		end
+		return list
+	end
+	Main.SkinWindows = function()
+		if Main.Options.Look ~= "Accent" then return end
+		for _, w in ipairs(skinWinList()) do
+			pcall(function()
+				local m = w.GuiElems.Main
+				if not m:FindFirstChild("IXSkinBar") then
+					addStroke(m, 1, 0.45)
+					local bar = Instance.new("Frame")
+					bar.Name = "IXSkinBar"
+					bar.BorderSizePixel = 0
+					bar.BackgroundColor3 = skinAccent()
+					bar.Size = UDim2.new(1, 0, 0, 2)
+					bar.ZIndex = 20
+					bar.Parent = m
+				end
+			end)
+		end
+	end
+	Main.SkinRefresh = function()
+		local acc = skinAccent()
+		local function paint(root)
+			for _, d in ipairs(root:GetDescendants()) do
+				if d.Name == "IXSkin" and d:IsA("UIStroke") then d.Color = acc
+				elseif d.Name == "IXSkinBar" then d.BackgroundColor3 = acc
+				elseif d:IsA("ScrollingFrame") and Main.Options.Look == "Accent" then d.ScrollBarImageColor3 = acc end
+			end
+		end
+		for _, w in ipairs(skinWinList()) do
+			pcall(function() paint(w.GuiElems.Main) end)
+		end
+		for _, root in ipairs(Main.StyleRoots()) do pcall(paint, root) end
+	end
+	Main.UnskinAll = function()
+		local function strip(root)
+			local n = 0
+			for _, d in ipairs(root:GetDescendants()) do
+				n = n + 1
+				if n % 500 == 0 then task.wait() end
+				if d.Name == "IXSkin" or d.Name == "IXSkinBar" then
+					pcall(function() d:Destroy() end)
+				elseif d:GetAttribute("IXFont") ~= nil then
+					pcall(function()
+						d.Font = Enum.Font[d:GetAttribute("IXFont")]
+						d.TextSize = d:GetAttribute("IXSize") or d.TextSize
+						d:SetAttribute("IXFont", nil)
+						d:SetAttribute("IXSize", nil)
+					end)
+				end
+			end
+		end
+		for _, w in ipairs(skinWinList()) do
+			pcall(function() strip(w.GuiElems.Main) end)
+		end
+		for _, root in ipairs(Main.StyleRoots()) do pcall(strip, root) end
+	end
+
+	Main.StyleRoots = function()
+		local roots = {}
+		local g = (getgenv or function() return _G end)()
+		local R = g.__RPP
+		if R and R.RecGui and R.RecGui.Parent then roots[#roots + 1] = R.RecGui end
+		for _, w in ipairs({Main.RecorderWin, Main.CopyWin, Main.ToolWin, Main.SpyWin, Main.SpyCodeWin, SaveInstance and SaveInstance.Window}) do
+			pcall(function()
+				local c = w and w.GuiElems and w.GuiElems.Content
+				if c then roots[#roots + 1] = c end
+			end)
+		end
+		return roots
+	end
+
+	Main.RestyleAll = function()
+		for _, root in ipairs(Main.StyleRoots()) do
+			local n = 0
+			for _, d in ipairs(root:GetDescendants()) do
+				Main.StyleObject(d)
+				n = n + 1
+				if n % 400 == 0 then task.wait() end
+			end
+		end
+	end
+
+	Main.StartStyle = function()
+		Main.StyleConns = Main.StyleConns or {}
+		for _, root in ipairs(Main.StyleRoots()) do
+			table.insert(Main.StyleConns, root.DescendantAdded:Connect(function(d)
+				task.defer(Main.StyleObject, d)
+			end))
+		end
+		task.spawn(Main.RestyleAll)
+		pcall(Main.SkinWindows)
+	end
+
 	Main.RefreshMenu = function()
 		local gui = Main.MainGui
 		if gui then
@@ -17351,6 +18164,7 @@ Main = (function()
 			end)
 			pcall(Main.ApplyOptions)
 		end
+		pcall(Main.SkinRefresh)
 	end
 
 	Main.SetPalette = function(p, noSave)
@@ -17363,7 +18177,9 @@ Main = (function()
 		local done = false
 		if R and R.RecApply then done = pcall(R.RecApply, full) end
 		if not done and R and R.ApplyTheme then pcall(R.ApplyTheme, {c = full}) end
+		if R then R.WindowCorner = Main.Options.WindowCorner end
 		if R and R.CopyApply then pcall(R.CopyApply, full) end
+		if R and R.SpyRefresh then pcall(R.SpyRefresh) end
 		if R and R.ToolRefresh then pcall(R.ToolRefresh) end
 		Main.RefreshMenu()
 		if not noSave then Main.SavePalette() end
@@ -17520,8 +18336,10 @@ Main = (function()
 				return win
 			end
 			Main.RecorderWin = makeWin("Recorder ++", 300, 360)
-			Main.CopyWin = makeWin("Copy", 300, 320)
+			Main.CopyWin = makeWin("Copy", 430, 340)
 			Main.ToolWin = makeWin("Tool Copy", 420, 340)
+			Main.SpyWin = makeWin("Remote Spy", 500, 460)
+			Main.SpyCodeWin = makeWin("Remote Spy - Code", 460, 320)
 		end
 
 		if env.readfile and listfiles then
@@ -17562,7 +18380,8 @@ Main = (function()
 		local genv = (getgenv or function() return _G end)()
 		genv.__RPP = {
 			Main = Main, Lib = Lib, Explorer = Explorer, Properties = Properties, ModelViewer = ModelViewer, ScriptViewer = ScriptViewer, Console = Console,
-			RecorderWin = Main.RecorderWin, CopyWin = Main.CopyWin, ToolWin = Main.ToolWin,
+			RecorderWin = Main.RecorderWin, CopyWin = Main.CopyWin, ToolWin = Main.ToolWin, SpyWin = Main.SpyWin, SpyCodeWin = Main.SpyCodeWin,
+			SpyAuto = Main.Options.SpyAuto ~= false,
 			GetTheme = function() return Settings.Theme end, API = API, RMD = RMD,
 			GetSelection = function()
 				local r = {}
@@ -17656,6 +18475,7 @@ Main = (function()
 			run(Main.CopySrc, "Copy")
 			run(Main.RecorderSrc, "Recorder")
 			run(Main.ToolSrc, "ToolCopy")
+			run(Main.SpySrc, "RemoteSpy")
 			pcall(function()
 				local sp = Main.LoadPalette()
 				if sp then Main.SetPalette(sp, true) end
@@ -17663,11 +18483,13 @@ Main = (function()
 			pcall(function()
 				if Main.Options.AutoOpen then Main.SetMainGuiOpen(true) end
 			end)
+			pcall(Main.StartStyle)
 			finish()
 		end)
 	end
 
 	Main.Uninit = function()
+		if Main.StyleConns then for _, c in ipairs(Main.StyleConns) do pcall(function() c:Disconnect() end) end Main.StyleConns = {} end
 		if Main.KeyConn then Main.KeyConn:Disconnect() Main.KeyConn = nil end
 		Main.MiniGui = nil
 		Main.MenuApps = {}
@@ -17875,7 +18697,7 @@ if loaded then
 	if X.GUI_FACTOR[loaded.guiSize] then X.guiSize = loaded.guiSize end
 	if type(loaded.logCutscenes) == "boolean" then X.cutscenes = loaded.logCutscenes end
 	if type(loaded.logMovement) == "boolean" then X.logMove = loaded.logMovement end
-	X.comboLoad = { on = loaded.autoCombine, gap = loaded.comboGap }
+	X.comboLoad = { on = loaded.autoCombineV2, gap = loaded.comboGap }
 	applyMap(X.blockV, loaded.blockedVFX, vfxLabel)
 	applyMap(X.blockS, loaded.blockedSFX, sfxLabel)
 	if (tonumber(loaded.version) or 1) >= 2 then
@@ -21418,7 +22240,7 @@ end
 
 local tabBar = Instance.new("ScrollingFrame")
 tabBar.Position = UDim2.new(0, 0, 0, 0)
-tabBar.Size = UDim2.new(1, 0, 0, 22)
+tabBar.Size = UDim2.new(1, 0, 0, 26)
 tabBar.BackgroundColor3 = C.title
 tabBar.BackgroundTransparency = 0
 tabBar:SetAttribute("NoCorner", true)
@@ -21431,6 +22253,7 @@ tabBar.Parent = content
 local tabLayout = Instance.new("UIListLayout")
 tabLayout.FillDirection = Enum.FillDirection.Horizontal
 tabLayout.Padding = UDim.new(0, 3)
+tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 tabLayout.Parent = tabBar
 
 local TAB_DEFS = {
@@ -21440,7 +22263,7 @@ local TAB_DEFS = {
 local tabButtons, tabNames = {}, {}
 for _, def in ipairs(TAB_DEFS) do
 	local b = K.newButton(tabBar, def[2], C.title)
-	b.Size = UDim2.new(0, 0, 0, 22)
+	b.Size = UDim2.new(0, 0, 0, 26)
 	b.BorderSizePixel = 0
 	b.AutomaticSize = Enum.AutomaticSize.X
 	local pad = Instance.new("UIPadding")
@@ -21465,8 +22288,8 @@ for _, n in ipairs({ "Explorer" }) do
 end
 
 local pageHost = Instance.new("Frame")
-pageHost.Position = UDim2.new(0, 4, 0, 28)
-pageHost.Size = UDim2.new(1, -8, 1, -56)
+pageHost.Position = UDim2.new(0, 4, 0, 32)
+pageHost.Size = UDim2.new(1, -8, 1, -60)
 pageHost.BackgroundTransparency = 1
 pageHost.Parent = content
 
@@ -22509,9 +23332,11 @@ do
 		do
 			local RP = getgenv and getgenv().__RPP
 			if RP then
+				RP.RecGui = gui
 				RP.RecApply = function(p)
 					local base = Th.cur
-					local nt = { name = "Custom", font = base.font, bold = base.bold, corner = base.corner, wcorner = base.wcorner, c = {} }
+					local wc = RP.WindowCorner
+					local nt = { name = "Custom", font = base.font, bold = base.bold, corner = wc or base.corner, wcorner = wc or base.wcorner, c = {} }
 					for role, col in pairs(C) do nt.c[role] = col end
 					for role, col in pairs(p) do nt.c[role] = col end
 					Th.byName.Custom = nt
@@ -24081,6 +24906,15 @@ task.spawn(function()
 	IC.pending = {}
 end)
 
+do
+	local R0 = getgenv and getgenv().__RPP
+	local M0 = R0 and R0.Main
+	if M0 then
+		M0.IconHook = X.addIcon
+		for _, q in ipairs(M0.IconQ or {}) do pcall(X.addIcon, q[1], q[2], q[3]) end
+		M0.IconQ = {}
+	end
+end
 -- tab icons
 for name, key in pairs({ Anim = "anim", VFX = "vfx", SFX = "sfx", OBJ = "obj", Search = "search", Saved = "saved", NPC = "npc", Design = "design", Filters = "filters", Settings = "settings", Console = "console", Explorer = "explorer" }) do
 	if tabButtons[name] then X.addIcon(tabButtons[name], key, 14) end
@@ -25202,7 +26036,17 @@ local function pathOf(inst, rootInst)
 	return "{" .. table.concat(out, ",") .. "}"
 end
 
-function SG.buildClient(L, name, setStatus)
+function SG.buildClient(L, name, setStatus, opts)
+	opts = opts or {}
+	local svc = opts.Services or {}
+	local lastY = os.clock()
+	local sliceT = opts.SafeMode == false and 0.022 or 0.008
+	local function yieldIf()
+		if os.clock() - lastY > sliceT then
+			task.wait()
+			lastY = os.clock()
+		end
+	end
 	local Plrs = game:GetService("Players")
 	local chars = {}
 	for _, p in ipairs(Plrs:GetPlayers()) do
@@ -25225,6 +26069,13 @@ function SG.buildClient(L, name, setStatus)
 		{ key = "CharacterScripts", inst = SP:FindFirstChild("StarterCharacterScripts"), kind = "scripts" },
 	}
 
+	do
+		local FL = { Workspace = "Workspace", ReplicatedStorage = "ReplicatedStorage", ReplicatedFirst = "ReplicatedFirst", StarterGui = "StarterGui", StarterPack = "StarterPack", PlayerScripts = "StarterPlayer", CharacterScripts = "StarterPlayer" }
+		for _, r in ipairs(roots) do
+			if svc[FL[r.key]] == false then r.inst = nil end
+		end
+	end
+
 	-- 1. plan the structure parts
 	setStatus("Planning structures ...")
 	local jobs = {}
@@ -25241,7 +26092,7 @@ function SG.buildClient(L, name, setStatus)
 			jobs[id] = { id = id, parent = parentId, root = rootKey, inst = inst, full = false }
 			for _, ch in ipairs(inst:GetChildren()) do plan(ch, id, rootKey) end
 		end
-		if id % 20 == 0 then task.wait() end
+		yieldIf()
 	end
 	for _, r in ipairs(roots) do
 		if r.inst and r.kind == "world" then
@@ -25253,9 +26104,10 @@ function SG.buildClient(L, name, setStatus)
 	local parts = {}
 	local total = #jobs
 	for i, job in ipairs(jobs) do
-		if i % 5 == 0 then
+		if os.clock() - lastY > sliceT then
 			setStatus(string.format("Structures %d/%d ...", i, total))
 			task.wait()
+			lastY = os.clock()
 		end
 		local ok, code = pcall(L.structCodeMulti, { job.inst }, job.inst.Name, { maxNodes = job.full and 3000 or 1 })
 		if ok and code then
@@ -25265,9 +26117,30 @@ function SG.buildClient(L, name, setStatus)
 		end
 	end
 	local sg = roots[4].inst
+	local guiList, seenG = {}, {}
 	if sg then
-		local gid = #jobs
 		for _, g in ipairs(sg:GetChildren()) do
+			if g:IsA("ScreenGui") then guiList[#guiList + 1] = g seenG[g.Name] = true end
+		end
+	end
+	if opts.SaveGuis ~= false then
+		pcall(function()
+			local SKIPG = { Chat = true, BubbleChat = true, PlayerList = true, Backpack = true, EmotesMenu = true, TouchGui = true, ControlGui = true, RobloxGui = true, Intro = true, TopbarStandard = true, ExperienceChat = true, Freecam = true }
+			local R0 = genvT().__RPP
+			local mine = R0 and R0.RecGui
+			local pg = Plrs.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+			for _, g in ipairs(pg and pg:GetChildren() or {}) do
+				if g:IsA("ScreenGui") and g ~= mine and not seenG[g.Name] and not SKIPG[g.Name]
+					and not g.Name:find("_DPP_", 1, true) and not g.Name:find("InstanceX", 1, true) and not g.Name:find("Recorder", 1, true) then
+					guiList[#guiList + 1] = g
+					seenG[g.Name] = true
+				end
+			end
+		end)
+	end
+	if #guiList > 0 then
+		local gid = #jobs
+		for _, g in ipairs(guiList) do
 			if g:IsA("ScreenGui") then
 				local o = { desc = true, place = false, hui = false, compact = true }
 				local ok, code = pcall(function()
@@ -25278,28 +26151,47 @@ function SG.buildClient(L, name, setStatus)
 					gid = gid + 1
 					parts[#parts + 1] = string.format("{ id = %d, root = \"StarterGui\", parent = 0, gname = %q, code = %s },", gid, g.Name, longStr(code))
 				end
-				task.wait()
+				yieldIf()
 			end
 		end
 		jobs.guiEnd = gid
 	end
 	local pk = roots[5].inst
-	if pk and L.toolCode then
+	local toolList, seenT = {}, {}
+	local function addTool(tl)
+		if tl:IsA("Tool") and not seenT[tl.Name] then
+			seenT[tl.Name] = true
+			toolList[#toolList + 1] = tl
+		end
+	end
+	if pk then for _, tl in ipairs(pk:GetChildren()) do addTool(tl) end end
+	if opts.SaveBackpack ~= false then
+		pcall(function()
+			local lpl = Plrs.LocalPlayer
+			local bp = lpl:FindFirstChildOfClass("Backpack")
+			for _, tl in ipairs(bp and bp:GetChildren() or {}) do addTool(tl) end
+			if lpl.Character then
+				for _, tl in ipairs(lpl.Character:GetChildren()) do addTool(tl) end
+			end
+		end)
+	end
+	if #toolList > 0 and L.toolCode then
 		local gid = (jobs.guiEnd or #jobs)
-		for _, tl in ipairs(pk:GetChildren()) do
+		for _, tl in ipairs(toolList) do
 			if tl:IsA("Tool") then
 				local ok, code = pcall(L.toolCode, tl)
 				if ok and type(code) == "string" then
 					gid = gid + 1
 					parts[#parts + 1] = string.format("{ id = %d, root = \"StarterPack\", parent = 0, code = %s },", gid, longStr(code))
 				end
-				task.wait()
+				yieldIf()
 			end
 		end
 	end
 
 	-- 3. scripts
 	local scripts, animIds, animOrder, skippedScripts = {}, {}, {}, 0
+	local pend = {}
 	local function noteAnim(id)
 		local n = tostring(id or ""):match("%d+")
 		if n and n ~= "0" and not animIds[n] and #animOrder < 80 then
@@ -25326,18 +26218,40 @@ function SG.buildClient(L, name, setStatus)
 							run = okc and rc
 						end
 						if cls == "ModuleScript" or run then
-							setStatus(string.format("Decompiling scripts (%d found) ...", #scripts + 1))
-							local src = tryDecompile(d)
-							if src and src ~= "" then
-								for id in src:gmatch("AnimationId%s*=%s*[\"']([^\"']+)[\"']") do noteAnim(id) end
-								scripts[#scripts + 1] = string.format("{ class = %q, name = %q, root = %q, run = %s, path = %s, src = %s },",
-									cls, d.Name, r.key, tostring(run), pathOf(d, r.inst), longStr(src))
-							else
-								skippedScripts = skippedScripts + 1
-							end
+							pend[#pend + 1] = { d = d, cls = cls, root = r, run = run }
 						end
 					end
 				end
+			end
+		end
+	end
+	do
+		local total, nextI, doneN, running = #pend, 1, 0, 0
+		local nWorkers = opts.SafeMode == false and 6 or 3
+		for _ = 1, math.min(nWorkers, total) do
+			running = running + 1
+			task.spawn(function()
+				while true do
+					local i = nextI
+					if i > total then break end
+					nextI = i + 1
+					local e = pend[i]
+					if opts.Decompile ~= false then e.src = tryDecompile(e.d) end
+					doneN = doneN + 1
+					if doneN % 4 == 0 then setStatus(string.format("Decompiling scripts %d/%d ...", doneN, total)) end
+				end
+				running = running - 1
+			end)
+		end
+		while running > 0 do task.wait(0.1) end
+		for _, e in ipairs(pend) do
+			local src = e.src
+			if src and src ~= "" then
+				for id in src:gmatch("AnimationId%s*=%s*[\"']([^\"']+)[\"']") do noteAnim(id) end
+				scripts[#scripts + 1] = string.format("{ class = %q, name = %q, root = %q, run = %s, path = %s, src = %s },",
+					e.cls, e.d.Name, e.root.key, tostring(e.run), pathOf(e.d, e.root.inst), longStr(src))
+			else
+				skippedScripts = skippedScripts + 1
 			end
 		end
 	end
@@ -25355,7 +26269,7 @@ function SG.buildClient(L, name, setStatus)
 	local animLines, animOk = {}, 0
 	local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
 	local targetRig = hum and hum.RigType.Name or "R15"
-	for i, n in ipairs(animOrder) do
+	for i, n in ipairs(opts.Anims == false and {} or animOrder) do
 		setStatus(string.format("Animations %d/%d ...", i, #animOrder))
 		local raw = animIds[n]
 		local finished = false
@@ -25399,24 +26313,34 @@ function SG.buildClient(L, name, setStatus)
 	if skippedScripts > 0 then add(string.format("-- %d script(s) could not be decompiled and were skipped.", skippedScripts)) end
 	add("local ANIMS = {}")
 	for _, l in ipairs(animLines) do add(l) end
-	add("local LIGHT = " .. longStr(lightingCode()))
+	add("local LIGHT = " .. longStr(svc.Lighting == false and "" or lightingCode()))
 	add("local JOBS = {")
 	for _, p in ipairs(parts) do add(p) end
 	add("}")
 	add("local SCRIPTS = {")
 	for _, s in ipairs(scripts) do add(s) end
 	add("}")
+	if opts.RemoteLogs then
+		pcall(function()
+			local RR = genvT().__RPP
+			local t = RR and RR.SpyExport and RR.SpyExport("module")
+			if t then
+				add("-- Remote Spy data saved with the copy")
+				add("local REMOTE_LOG = " .. longStr(t))
+			end
+		end)
+	end
 	add(SG_RUNTIME)
 	return table.concat(out, "\n")
 end
 
-function SG.saveClient(name, setStatus, done)
+function SG.saveClient(name, setStatus, done, opts)
 	local L = genvT().__RPP_Copy
 	if not (L and L.structCodeMulti and L.buildNodes and L.codeFrom) then
 		return done(false, "The Copy module is not loaded yet, wait a moment and try again")
 	end
 	task.spawn(function()
-		local ok, res = pcall(SG.buildClient, L, name, setStatus)
+		local ok, res = pcall(SG.buildClient, L, name, setStatus, opts)
 		if not ok then return done(false, tostring(res)) end
 		local okw, path = X.writeScriptFile(res, name .. "_ClientUsable", "InstanceX_Saves")
 		if okw then done(true, path) else done(false, path) end
@@ -25503,7 +26427,14 @@ end
 
 do
 	local Lg = genvT().__RPP_Logger
-	if Lg then Lg.openSaveGame = SG.open end
+	if Lg then
+		Lg.saveClient = SG.saveClient
+		Lg.openSaveGame = function()
+			local R0 = genvT().__RPP
+			local app = R0 and R0.Main and R0.Main.MenuApps and R0.Main.MenuApps["Game Copy"]
+			if app then app.Enable() else SG.open() end
+		end
+	end
 end
 
 end)()
@@ -31159,7 +32090,7 @@ end
 
 -- ---------- auto-combine: animations that are the continuation of another one ----------
 do
-	local CB = { on = true, gap = 1, chain = nil, made = {}, count = 0, recent = {}, seen = setmetatable({}, { __mode = "k" }) }
+	local CB = { on = false, gap = 1, chain = nil, made = {}, count = 0, recent = {}, seen = setmetatable({}, { __mode = "k" }) }
 	X.combo = CB
 	if X.comboLoad then
 		if type(X.comboLoad.on) == "boolean" then CB.on = X.comboLoad.on end
@@ -36129,7 +37060,7 @@ saveSettings = function()
 			excluded = labelsFor(excluded, animLabel),
 			blocked = labelsFor(blocked, animLabel),
 			logVariants = X.variants, strictFX = X.strict, fxAll = X.fxAll, guiSize = X.guiSize, logCutscenes = X.cutscenes, logMovement = X.logMove,
-			autoCombine = X.combo and X.combo.on, comboGap = X.combo and X.combo.gap,
+			autoCombineV2 = X.combo and X.combo.on, comboGap = X.combo and X.combo.gap,
 			blockedVFX = labelsFor(X.blockV, vfxLabel),
 			blockedSFX = labelsFor(X.blockS, sfxLabel),
 			excludedVFX = labelsFor(excludedVFX, vfxLabel),
@@ -39262,6 +40193,11 @@ for i, name in ipairs(TABS) do
 			bind(hl, "BackgroundColor3", "SEL")
 		end
 		tabBtns[name] = b
+		do
+			local R0 = (getgenv or function() return _G end)().__RPP
+			local TI = { Pick = "obj", Props = "settings", Find = "search", Code = "console", Saved = "saved", Tools = "tool", Spy = "info", Set = "filters" }
+			if HOST and R0 and R0.Main and R0.Main.Icon then R0.Main.Icon(b, TI[name], 13) end
+		end
 	pages[name] = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false }, body)
 	b.MouseButton1Click:Connect(function() showTab(name) end)
 end
@@ -43123,6 +44059,927 @@ if not HOST then L.credit() end
 
 ]=====]
 
+Main.SpySrc = [=====[
+local genv = (getgenv and getgenv()) or _G
+local R = genv.__RPP
+local win = R and R.SpyWin
+local cwin = R and R.SpyCodeWin
+if not (win and win.GuiElems and win.GuiElems.Content and cwin and cwin.GuiElems and cwin.GuiElems.Content) then return end
+
+if genv.__RPP_SpyCleanup then pcall(genv.__RPP_SpyCleanup) end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local lp = Players.LocalPlayer
+local content = win.GuiElems.Content
+local ccontent = cwin.GuiElems.Content
+
+local DEF = {
+	bar = Color3.fromRGB(52, 52, 52), back = Color3.fromRGB(32, 32, 32), btn = Color3.fromRGB(60, 60, 60),
+	line = Color3.fromRGB(55, 55, 55), sel = Color3.fromRGB(11, 90, 175), text = Color3.fromRGB(255, 255, 255),
+	sub = Color3.fromRGB(185, 185, 185), win = Color3.fromRGB(45, 45, 45),
+}
+local T = setmetatable({}, { __index = function(_, k)
+	local th = R and R.GetTheme and R.GetTheme()
+	if not th then return DEF[k] end
+	if k == "bar" then return th.Main1
+	elseif k == "back" then return th.Menu
+	elseif k == "btn" then return th.Button
+	elseif k == "line" then return th.Outline2
+	elseif k == "sel" then return th.ListSelection
+	elseif k == "text" then return th.Text
+	elseif k == "win" then return th.Main2
+	elseif k == "sub" then return th.Text:Lerp(th.Main2, 0.33)
+	end
+	return DEF[k]
+end })
+local COL_OUT, COL_FUNC, COL_IN, COL_BLOCK = Color3.fromRGB(70, 140, 235), Color3.fromRGB(235, 160, 70), Color3.fromRGB(90, 200, 120), Color3.fromRGB(210, 80, 80)
+
+local function new(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props) do o[k] = v end
+	if parent then o.Parent = parent end
+	return o
+end
+
+local S = {
+	on = false, incoming = false, paused = false, stack = true, spam = true, logs = {}, byKey = {}, rows = {}, seq = 0, total = 0,
+	filter = "", sel = nil, excluded = {}, autoEx = {}, ignored = {}, blocked = {}, rate = {}, view = "log", inConns = {}, inHooked = {},
+	replaying = false, dirty = true, alive = true, conns = {}, hookInfo = "hook not installed",
+}
+
+-- ---------- rules saved between sessions ----------
+local RULES = "InstanceX/spy_rules.json"
+local function saveRules()
+	pcall(function()
+		if not writefile then return end
+		if makefolder and isfolder and not isfolder("InstanceX") then makefolder("InstanceX") end
+		local function keys(t, skip)
+			local o = {}
+			for k in pairs(t) do if not (skip and skip[k]) then o[#o + 1] = k end end
+			table.sort(o)
+			return o
+		end
+		writefile(RULES, HttpService:JSONEncode({ excluded = keys(S.excluded, S.autoEx), ignored = keys(S.ignored), blocked = keys(S.blocked) }))
+	end)
+end
+pcall(function()
+	if isfile and readfile and isfile(RULES) then
+		local d = HttpService:JSONDecode(readfile(RULES))
+		for _, k in ipairs(d.excluded or {}) do S.excluded[k] = true end
+		for _, k in ipairs(d.ignored or {}) do S.ignored[k] = true end
+		for _, k in ipairs(d.blocked or {}) do S.blocked[k] = true end
+	end
+end)
+
+-- ---------- turning values into code ----------
+local function q(s) return string.format("%q", tostring(s)) end
+local function num(n)
+	if n ~= n then return "0/0" end
+	if n == math.huge then return "math.huge" end
+	if n == -math.huge then return "-math.huge" end
+	if n == math.floor(n) and math.abs(n) < 1e15 then return string.format("%d", n) end
+	return string.format("%.9g", n)
+end
+local function instExpr(i)
+	if i == game then return "game" end
+	if i == lp then return 'game:GetService("Players").LocalPlayer' end
+	if lp.Character and i == lp.Character then return 'game:GetService("Players").LocalPlayer.Character' end
+	local chain, cur = {}, i
+	while cur and cur ~= game do
+		table.insert(chain, 1, cur)
+		cur = cur.Parent
+	end
+	if cur ~= game or #chain == 0 then return "nil --[[ not in the game: " .. tostring(i.Name) .. " ]]" end
+	local s = "game:GetService(" .. q(chain[1].ClassName) .. ")"
+	for k = 2, #chain do s = s .. ":FindFirstChild(" .. q(chain[k].Name) .. ")" end
+	return s
+end
+local function pathText(i)
+	local names, cur = {}, i
+	while cur and cur ~= game do
+		table.insert(names, 1, cur.Name)
+		cur = cur.Parent
+	end
+	return (cur == game and "" or "nil.") .. table.concat(names, ".")
+end
+local ser
+ser = function(v, depth, seen)
+	local t = typeof(v)
+	if t == "string" then return q(v) end
+	if t == "number" then return num(v) end
+	if t == "boolean" or t == "nil" then return tostring(v) end
+	if t == "Instance" then return instExpr(v) end
+	if t == "table" then
+		if depth > 5 or seen[v] then return "{} --[[ too deep or cycle ]]" end
+		seen[v] = true
+		local parts, n, isArr = {}, 0, true
+		local count = 0
+		for k in pairs(v) do
+			count = count + 1
+			if type(k) ~= "number" or k ~= count then isArr = false end
+		end
+		for k, x in pairs(v) do
+			n = n + 1
+			if n > 60 then parts[#parts + 1] = "--[[ more ]]" break end
+			if isArr then
+				parts[#parts + 1] = ser(x, depth + 1, seen)
+			else
+				local ks
+				if type(k) == "string" then ks = "[" .. q(k) .. "]"
+				elseif type(k) == "number" then ks = "[" .. num(k) .. "]"
+				elseif typeof(k) == "Instance" then ks = "[" .. instExpr(k) .. "]"
+				else ks = "[nil]" end
+				parts[#parts + 1] = ks .. " = " .. ser(x, depth + 1, seen)
+			end
+		end
+		seen[v] = nil
+		return "{" .. table.concat(parts, ", ") .. "}"
+	end
+	if t == "Vector3" then return "Vector3.new(" .. num(v.X) .. ", " .. num(v.Y) .. ", " .. num(v.Z) .. ")" end
+	if t == "Vector2" then return "Vector2.new(" .. num(v.X) .. ", " .. num(v.Y) .. ")" end
+	if t == "Color3" then return "Color3.new(" .. num(v.R) .. ", " .. num(v.G) .. ", " .. num(v.B) .. ")" end
+	if t == "CFrame" then
+		local c = { v:GetComponents() }
+		local o = {}
+		for i = 1, #c do o[i] = num(c[i]) end
+		return "CFrame.new(" .. table.concat(o, ", ") .. ")"
+	end
+	if t == "UDim2" then return "UDim2.new(" .. num(v.X.Scale) .. ", " .. num(v.X.Offset) .. ", " .. num(v.Y.Scale) .. ", " .. num(v.Y.Offset) .. ")" end
+	if t == "UDim" then return "UDim.new(" .. num(v.Scale) .. ", " .. num(v.Offset) .. ")" end
+	if t == "BrickColor" then return "BrickColor.new(" .. v.Number .. ")" end
+	if t == "EnumItem" then return tostring(v) end
+	if t == "Ray" then return "Ray.new(" .. ser(v.Origin, 0, {}) .. ", " .. ser(v.Direction, 0, {}) .. ")" end
+	if t == "Rect" then return "Rect.new(" .. num(v.Min.X) .. ", " .. num(v.Min.Y) .. ", " .. num(v.Max.X) .. ", " .. num(v.Max.Y) .. ")" end
+	return "nil --[[ " .. t .. " ]]"
+end
+local function argsCode(args)
+	local out = {}
+	for i = 1, args.n do out[#out + 1] = "\t[" .. i .. "] = " .. ser(args[i], 0, {}) .. "," end
+	return "local args = {\n" .. table.concat(out, "\n") .. "\n}"
+end
+local function argSig(args)
+	local out = {}
+	for i = 1, args.n do
+		local s = ser(args[i], 0, {})
+		out[i] = #s > 300 and (s:sub(1, 300) .. #s) or s
+	end
+	return table.concat(out, ",")
+end
+local function preview(args)
+	local out = {}
+	for i = 1, math.min(args.n, 4) do
+		local v = args[i]
+		local t = typeof(v)
+		local s
+		if t == "Instance" then s = v.Name
+		elseif t == "table" then s = "{..}"
+		elseif t == "string" then s = '"' .. (#v > 18 and (v:sub(1, 18) .. "..") or v) .. '"'
+		else s = tostring(v) end
+		out[i] = s
+	end
+	if args.n > 4 then out[#out + 1] = "+" .. (args.n - 4) end
+	if args.n == 0 then return "(no arguments)" end
+	return table.concat(out, ", ")
+end
+
+local function callLine(e)
+	local unp = "table.unpack(args, 1, " .. e.args.n .. ")"
+	if e.dir == "in" then
+		return "firesignal(remote.OnClientEvent, " .. unp .. ")"
+	elseif e.method:lower() == "invokeserver" then
+		return "local result = remote:InvokeServer(" .. unp .. ")\nprint(result)"
+	end
+	return "remote:FireServer(" .. unp .. ")"
+end
+local function codeFor(e)
+	local lines = {
+		"-- Remote Spy: " .. e.name .. " (" .. e.method .. (e.dir == "in" and ", sent to you by the server" or "") .. ") - seen " .. e.count .. " time(s)",
+	}
+	if e.script then lines[#lines + 1] = "-- called from: " .. pathText(e.script) end
+	lines[#lines + 1] = "local remote = " .. instExpr(e.remote)
+	lines[#lines + 1] = argsCode(e.args)
+	lines[#lines + 1] = callLine(e)
+	if e.ret then
+		local ok, s = pcall(function()
+			local o = {}
+			for i = 1, e.ret.n do o[i] = ser(e.ret[i], 0, {}) end
+			return table.concat(o, ", ")
+		end)
+		if ok then lines[#lines + 1] = "-- it returned: " .. s:gsub("\n", " ") end
+	end
+	return table.concat(lines, "\n")
+end
+
+-- ---------- one place for exports (used by the Save Instance window too) ----------
+local function exportText()
+	if #S.logs == 0 then return nil end
+	local out = { "-- Remote Spy log, place " .. game.PlaceId .. ", " .. os.date("%Y-%m-%d %H:%M:%S"), "-- " .. #S.logs .. " different calls, " .. S.total .. " calls in total", "" }
+	for _, e in ipairs(S.logs) do
+		out[#out + 1] = "do"
+		out[#out + 1] = codeFor(e):gsub("\n", "\n\t"):gsub("^", "\t")
+		out[#out + 1] = "end"
+		out[#out + 1] = ""
+	end
+	return table.concat(out, "\n")
+end
+local function remoteInventory()
+	local list = {}
+	pcall(function()
+		for _, d in ipairs(game:GetDescendants()) do
+			local c = d.ClassName
+			if c == "RemoteEvent" or c == "RemoteFunction" or c == "UnreliableRemoteEvent" or c == "BindableEvent" or c == "BindableFunction" then
+				list[#list + 1] = { path = pathText(d), class = c }
+				if #list >= 3000 then break end
+			end
+		end
+	end)
+	return list
+end
+local function exportModule()
+	local inv = remoteInventory()
+	if #S.logs == 0 and #inv == 0 then return nil end
+	local out = { "-- Remote Spy log saved with the game copy (place " .. game.PlaceId .. ", " .. os.date("%Y-%m-%d %H:%M:%S") .. ")", "-- data only, nothing here fires a remote", "return {", "\tCalls = {" }
+	for _, e in ipairs(S.logs) do
+		local a = {}
+		for i = 1, e.args.n do a[i] = "\t\t\t\t[" .. i .. "] = " .. ser(e.args[i], 0, {}) .. "," end
+		out[#out + 1] = "\t\t{"
+		out[#out + 1] = "\t\t\tRemote = " .. q(pathText(e.remote)) .. ","
+		out[#out + 1] = "\t\t\tClass = " .. q(e.cls) .. ","
+		out[#out + 1] = "\t\t\tMethod = " .. q(e.method) .. ","
+		out[#out + 1] = "\t\t\tDirection = " .. q(e.dir == "in" and "server to client" or "client to server") .. ","
+		out[#out + 1] = "\t\t\tCount = " .. e.count .. ","
+		out[#out + 1] = "\t\t\tArgCount = " .. e.args.n .. ","
+		out[#out + 1] = "\t\t\tArgs = {\n" .. table.concat(a, "\n") .. "\n\t\t\t},"
+		out[#out + 1] = "\t\t},"
+	end
+	out[#out + 1] = "\t},"
+	out[#out + 1] = "\tRemotes = {"
+	for _, r in ipairs(inv) do out[#out + 1] = "\t\t{ Path = " .. q(r.path) .. ", Class = " .. q(r.class) .. " }," end
+	out[#out + 1] = "\t},"
+	out[#out + 1] = "}"
+	return table.concat(out, "\n")
+end
+R.SpyExport = function(kind)
+	local ok, res = pcall(kind == "module" and exportModule or exportText)
+	return ok and res or nil
+end
+
+-- ---------- ui ----------
+for _, c in ipairs(content:GetChildren()) do c:Destroy() end
+for _, c in ipairs(ccontent:GetChildren()) do c:Destroy() end
+
+local DET = 150
+local top = new("Frame", { Size = UDim2.new(1, 0, 0, 84), BackgroundColor3 = T.bar, BorderSizePixel = 0 }, content)
+local row1 = new("Frame", { Size = UDim2.new(1, -8, 0, 28), Position = UDim2.new(0, 4, 0, 4), BackgroundTransparency = 1 }, top)
+new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Center }, row1)
+local row2 = new("Frame", { Size = UDim2.new(1, -8, 0, 28), Position = UDim2.new(0, 4, 0, 34), BackgroundTransparency = 1 }, top)
+local statusLbl = new("TextLabel", {
+	Size = UDim2.new(1, -8, 0, 16), Position = UDim2.new(0, 6, 0, 64), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = T.sub, Font = Enum.Font.SourceSans, TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd, Text = "Remote Spy ready.",
+}, top)
+
+local statusTick = 0
+local function setStatus(text)
+	statusLbl.Text = text
+	statusTick = statusTick + 1
+	local mine = statusTick
+	task.delay(6, function()
+		if S.alive and statusTick == mine then
+			statusLbl.Text = S.on and ("Spy is on. " .. S.hookInfo) or "Spy is off."
+		end
+	end)
+end
+
+local btnObjs = {}
+local function mkBtn(parent, text, order, fn)
+	local b = new("TextButton", {
+		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 26), Text = text, AutoButtonColor = false, BackgroundColor3 = T.btn,
+		BorderColor3 = T.line, TextColor3 = T.text, Font = Enum.Font.SourceSans, TextSize = 15, LayoutOrder = order or 0,
+	}, parent)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9) }, b)
+	b.MouseEnter:Connect(function() b.BackgroundColor3 = b.BackgroundColor3:Lerp(Color3.new(1, 1, 1), 0.07) end)
+	b.MouseLeave:Connect(function() b.BackgroundColor3 = (b:GetAttribute("on") and T.sel) or T.btn end)
+	b.MouseButton1Click:Connect(function() fn(b) end)
+	btnObjs[#btnObjs + 1] = b
+	local SPYI = { ["Spy: OFF"] = "search", Pause = "settings", ["Incoming: off"] = "download", ["Stack: on"] = "folder", ["Spam guard: on"] = "filters", Rules = "check", ["Copy all"] = "copy", ["Save file"] = "save", Clear = "filters" }
+	if SPYI[text] and R.Main and R.Main.Icon then R.Main.Icon(b, SPYI[text], 14) end
+	return b
+end
+local function setOn(b, on)
+	b:SetAttribute("on", on and true or false)
+	b.BackgroundColor3 = on and T.sel or T.btn
+end
+
+local list = new("ScrollingFrame", {
+	Position = UDim2.new(0, 0, 0, 84), Size = UDim2.new(1, 0, 1, -(84 + DET)), BackgroundColor3 = T.back, BorderSizePixel = 0,
+	ScrollBarThickness = 10, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
+}, content)
+new("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+new("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) }, list)
+local emptyLbl = new("TextLabel", {
+	Size = UDim2.new(1, -20, 0, 60), Position = UDim2.new(0, 10, 0, 20), BackgroundTransparency = 1, TextColor3 = T.sub, Font = Enum.Font.SourceSans,
+	TextSize = 16, TextWrapped = true, Text = "Nothing logged yet. Turn the spy on and use the game: every RemoteEvent / RemoteFunction your client fires shows up here.",
+}, content)
+emptyLbl.Position = UDim2.new(0, 10, 0, 100)
+
+local detail = new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, DET), BackgroundColor3 = T.bar, BorderSizePixel = 0 }, content)
+local dTitle = new("TextLabel", {
+	Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -16, 0, 22), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = T.text, Font = Enum.Font.SourceSansBold, TextSize = 17, TextTruncate = Enum.TextTruncate.AtEnd, Text = "No log selected",
+}, detail)
+local dInfo = new("TextLabel", {
+	Position = UDim2.new(0, 8, 0, 27), Size = UDim2.new(1, -16, 0, 36), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = T.sub, Font = Enum.Font.SourceSans, TextSize = 14, TextWrapped = true,
+	Text = "Click a log to see it here. Double click opens its code.",
+}, detail)
+local btnArea = new("ScrollingFrame", {
+	Position = UDim2.new(0, 4, 0, 66), Size = UDim2.new(1, -8, 1, -70), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 6,
+	CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, detail)
+new("UIGridLayout", { CellSize = UDim2.fromOffset(104, 28), CellPadding = UDim2.fromOffset(5, 5), SortOrder = Enum.SortOrder.LayoutOrder }, btnArea)
+
+local function dBtn(text, order, fn)
+	local b = new("TextButton", {
+		Text = text, AutoButtonColor = false, BackgroundColor3 = T.btn, BorderColor3 = T.line, TextColor3 = T.text,
+		Font = Enum.Font.SourceSans, TextSize = 15, LayoutOrder = order,
+	}, btnArea)
+	b.MouseEnter:Connect(function() b.BackgroundColor3 = b.BackgroundColor3:Lerp(Color3.new(1, 1, 1), 0.07) end)
+	b.MouseLeave:Connect(function() b.BackgroundColor3 = T.btn end)
+	b.MouseButton1Click:Connect(function() fn(b) end)
+	btnObjs[#btnObjs + 1] = b
+	local DI = { ["View code"] = "console", ["Copy code"] = "copy", Run = "play", ["Copy path"] = "folder", ["Copy args"] = "copy", Exclude = "filters", ["Ignore args"] = "check", Block = "settings", ["Remove log"] = "filters" }
+	if DI[text] and R.Main and R.Main.Icon then R.Main.Icon(b, DI[text], 14) end
+	return b
+end
+
+-- ---------- log handling ----------
+local function methodColor(e)
+	if e.blocked then return COL_BLOCK end
+	if e.dir == "in" then return COL_IN end
+	if e.method:lower() == "invokeserver" then return COL_FUNC end
+	return COL_OUT
+end
+local function passes(e)
+	local f = S.filter
+	if f == "" then return true end
+	return ((e.name .. " " .. e.method .. " " .. e.preview):lower()):find(f, 1, true) ~= nil
+end
+local function dropEntry(e)
+	local row = S.rows[e]
+	if row then row:Destroy() S.rows[e] = nil end
+	if S.byKey[e.sig] == e then S.byKey[e.sig] = nil end
+	for i, x in ipairs(S.logs) do
+		if x == e then table.remove(S.logs, i) break end
+	end
+	if S.sel == e then S.sel = nil end
+	S.dirty = true
+end
+
+local function refreshDetail()
+	local e = S.sel
+	if not e then
+		dTitle.Text = "No log selected"
+		dInfo.Text = "Click a log to see it here. Double click opens its code."
+		return
+	end
+	dTitle.Text = e.name .. "   " .. e.method .. (e.count > 1 and ("   x" .. e.count) or "")
+	local bits = { preview(e.args) }
+	if e.script then bits[#bits + 1] = "from " .. e.script.Name end
+	if S.blocked[e.name] then bits[#bits + 1] = "BLOCKED" end
+	bits[#bits + 1] = pathText(e.remote)
+	dInfo.Text = table.concat(bits, "  |  ")
+end
+
+local openCode
+local lastClick = { e = nil, t = 0 }
+local function select(e)
+	S.sel = e
+	for k, row in pairs(S.rows) do
+		row.BackgroundColor3 = (k == e) and T.sel:Lerp(T.back, 0.5) or T.bar
+	end
+	refreshDetail()
+end
+
+local function updateRow(e, row)
+	row.Bar.BackgroundColor3 = methodColor(e)
+	row.Name1.Text = e.name .. (e.dir == "in" and "   (incoming)" or "")
+	row.Sub.Text = e.method .. "  |  " .. e.preview
+	row.Count.Visible = e.count > 1
+	row.Count.Text = "x" .. e.count
+	row.BackgroundColor3 = (S.sel == e) and T.sel:Lerp(T.back, 0.5) or T.bar
+end
+local function makeRow(e)
+	local row = new("Frame", { Size = UDim2.new(1, -2, 0, 46), BackgroundColor3 = T.bar, BorderSizePixel = 0, LayoutOrder = -e.id }, list)
+	new("Frame", { Name = "Bar", Size = UDim2.new(0, 4, 1, 0), BorderSizePixel = 0, BackgroundColor3 = COL_OUT }, row)
+	new("TextLabel", { Name = "Name1", Position = UDim2.new(0, 12, 0, 3), Size = UDim2.new(1, -86, 0, 21), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = T.text, Font = Enum.Font.SourceSansBold, TextSize = 16, TextTruncate = Enum.TextTruncate.AtEnd }, row)
+	new("TextLabel", { Name = "Sub", Position = UDim2.new(0, 12, 0, 24), Size = UDim2.new(1, -86, 0, 18), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = T.sub, Font = Enum.Font.SourceSans, TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd }, row)
+	new("TextLabel", { Name = "Count", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.new(0, 64, 0, 22), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = T.sel:Lerp(Color3.new(1, 1, 1), 0.35), Font = Enum.Font.SourceSansBold, TextSize = 17 }, row)
+	local hit = new("TextButton", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", ZIndex = 5 }, row)
+	hit.MouseButton1Click:Connect(function()
+		select(e)
+		local now = os.clock()
+		if lastClick.e == e and now - lastClick.t < 0.4 then openCode(e) end
+		lastClick.e, lastClick.t = e, now
+	end)
+	S.rows[e] = row
+	updateRow(e, row)
+	return row
+end
+
+local function renderRules()
+	for _, row in pairs(S.rows) do row.Visible = false end
+	for _, c in ipairs(list:GetChildren()) do
+		if c:IsA("Frame") and c.Name == "RuleRow" then c:Destroy() end
+	end
+	local order = 0
+	local function addRule(kind, key, tbl)
+		order = order + 1
+		local row = new("Frame", { Name = "RuleRow", Size = UDim2.new(1, -2, 0, 36), BackgroundColor3 = T.bar, BorderSizePixel = 0, LayoutOrder = order }, list)
+		new("TextLabel", { Position = UDim2.new(0, 8, 0, 0), Size = UDim2.new(1, -100, 1, 0), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = T.text, Font = Enum.Font.SourceSans, TextSize = 15, TextTruncate = Enum.TextTruncate.AtEnd, Text = kind .. ":  " .. key }, row)
+		local rm = new("TextButton", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -6, 0.5, 0), Size = UDim2.fromOffset(78, 26), Text = "Remove", AutoButtonColor = false, BackgroundColor3 = T.btn, BorderColor3 = T.line, TextColor3 = T.text, Font = Enum.Font.SourceSans, TextSize = 15 }, row)
+		rm.MouseButton1Click:Connect(function()
+			tbl[key] = nil
+			S.autoEx[key] = nil
+			saveRules()
+			S.dirty = true
+		end)
+	end
+	for k in pairs(S.excluded) do addRule(S.autoEx[k] and "Excluded (spam)" or "Excluded", k, S.excluded) end
+	for k in pairs(S.ignored) do addRule("Ignored args", k:sub(1, 80), S.ignored) end
+	for k in pairs(S.blocked) do addRule("Blocked", k, S.blocked) end
+	if order == 0 then
+		order = 1
+		new("TextLabel", { Name = "RuleRow", Size = UDim2.new(1, -2, 0, 50), BackgroundTransparency = 1, TextColor3 = T.sub, Font = Enum.Font.SourceSans, TextSize = 15, TextWrapped = true, LayoutOrder = 1, Text = "No rules yet. Use Exclude, Ignore or Block on a log." }, list)
+	end
+end
+
+local function render()
+	S.dirty = false
+	if S.view == "rules" then
+		emptyLbl.Visible = false
+		renderRules()
+		return
+	end
+	for _, c in ipairs(list:GetChildren()) do
+		if c:IsA("GuiObject") and c.Name == "RuleRow" then c:Destroy() end
+	end
+	local shown = 0
+	for _, e in ipairs(S.logs) do
+		local vis = passes(e)
+		local row = S.rows[e]
+		if vis then
+			if not row then row = makeRow(e) else updateRow(e, row) end
+			row.Visible = true
+			shown = shown + 1
+		elseif row then
+			row.Visible = false
+		end
+	end
+	emptyLbl.Visible = shown == 0
+	if shown == 0 and #S.logs > 0 then emptyLbl.Text = "No log matches the search." end
+	if #S.logs == 0 then emptyLbl.Text = "Nothing logged yet. Turn the spy on and use the game: every RemoteEvent / RemoteFunction your client fires shows up here." end
+	if S.sel then refreshDetail() end
+	statusLbl.Text = string.format("%d different calls, %d calls in total. %s", #S.logs, S.total, S.on and "Spy is on." or "Spy is off.")
+end
+
+local function removeByName(name)
+	local rm = {}
+	for _, e in ipairs(S.logs) do
+		if e.name == name then rm[#rm + 1] = e end
+	end
+	for _, e in ipairs(rm) do dropEntry(e) end
+end
+
+-- ---------- the hook ----------
+local METH = { FireServer = true, InvokeServer = true, fireServer = true, invokeServer = true }
+local function onCall(remote, method, args, dir)
+	if S.paused then return nil end
+	local okC, cls = pcall(function() return remote.ClassName end)
+	if not okC or not (cls == "RemoteEvent" or cls == "RemoteFunction" or cls == "UnreliableRemoteEvent") then return nil end
+	local name = remote.Name
+	local verdict = (dir == "out" and S.blocked[name]) and "BLOCK" or nil
+	if S.excluded[name] then return verdict end
+	local now = os.clock()
+	local r = S.rate[remote]
+	if not r or now - r.t > 1 then
+		r = { t = now, n = 0 }
+		S.rate[remote] = r
+	end
+	r.n = r.n + 1
+	S.total = S.total + 1
+	if S.spam and r.n > 40 and not verdict then
+		S.excluded[name] = true
+		S.autoEx[name] = true
+		S.note = "Auto-excluded " .. name .. " (more than 40 calls a second). See Rules."
+		removeByName(name)
+		S.dirty = true
+		return verdict
+	end
+	local sig = name .. "|" .. method .. "|" .. argSig(args)
+	if S.ignored[sig] then return verdict end
+	local e = S.stack and S.byKey[sig] or nil
+	if e then
+		e.count = e.count + 1
+		e.last = now
+	else
+		S.seq = S.seq + 1
+		e = { id = S.seq, remote = remote, name = name, cls = cls, method = method, dir = dir, args = args, sig = sig, count = 1, first = now, last = now, preview = preview(args), blocked = verdict ~= nil }
+		S.logs[#S.logs + 1] = e
+		S.byKey[sig] = e
+		if #S.logs > 400 then dropEntry(S.logs[1]) end
+		if type(getcallingscript) == "function" and dir == "out" then
+			local okS, scr = pcall(getcallingscript)
+			if okS and typeof(scr) == "Instance" then e.script = scr end
+		end
+	end
+	S.dirty = true
+	return verdict, (not verdict) and e or nil
+end
+genv.IXSpyCB = function(remote, method, args)
+	if not S.on or S.replaying then return nil end
+	local ok, verdict, e = pcall(onCall, remote, method, args, "out")
+	if ok then return verdict, e end
+	return nil
+end
+local function ensureHook()
+	if genv.IXSpyHooked then
+		S.hookInfo = "hook active"
+		return true
+	end
+	local canNC = type(getnamecallmethod) == "function" and type(hookmetamethod) == "function"
+	if not canNC and type(hookfunction) ~= "function" then
+		S.hookInfo = "this executor has no hookmetamethod or hookfunction"
+		return false
+	end
+	local wrap = type(newcclosure) == "function" and newcclosure or function(f) return f end
+	local isMine = type(checkcaller) == "function" and checkcaller or function() return false end
+	local function handle(self, method, ...)
+		local cb = genv.IXSpyCB
+		if not cb then return nil end
+		local args = table.pack(...)
+		return cb(self, method, args)
+	end
+	local ncOk = false
+	if canNC then
+		ncOk = pcall(function()
+			local old
+			old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
+				local method = getnamecallmethod()
+				if METH[method] and not isMine() then
+					local verdict, e = handle(self, method, ...)
+					if type(setnamecallmethod) == "function" then pcall(setnamecallmethod, method) end
+					if verdict == "BLOCK" then return nil end
+					if e and method:lower() == "invokeserver" then
+						local ret = table.pack(old(self, ...))
+						e.ret = ret
+						S.dirty = true
+						return table.unpack(ret, 1, ret.n)
+					end
+				end
+				return old(self, ...)
+			end))
+		end)
+	end
+	local fnOk = false
+	if not ncOk and type(hookfunction) == "function" then
+		fnOk = pcall(function()
+			local function hookFn(inst, name)
+				local old
+				old = hookfunction(inst[name], wrap(function(self, ...)
+					if not isMine() then
+						local verdict, e = handle(self, name, ...)
+						if verdict == "BLOCK" then return nil end
+						if e and name == "InvokeServer" then
+							local ret = table.pack(old(self, ...))
+							e.ret = ret
+							S.dirty = true
+							return table.unpack(ret, 1, ret.n)
+						end
+					end
+					return old(self, ...)
+				end))
+			end
+			hookFn(Instance.new("RemoteEvent"), "FireServer")
+			hookFn(Instance.new("RemoteFunction"), "InvokeServer")
+			pcall(hookFn, Instance.new("UnreliableRemoteEvent"), "FireServer")
+		end)
+	end
+	S.hookInfo = ncOk and "namecall hook ok" or (fnOk and "function hooks ok" or "could not hook")
+	if ncOk or fnOk then genv.IXSpyHooked = true end
+	return ncOk or fnOk
+end
+
+local function hookIncoming(remote)
+	if S.inHooked[remote] then return end
+	local ok, cls = pcall(function() return remote.ClassName end)
+	if not ok or not (cls == "RemoteEvent" or cls == "UnreliableRemoteEvent") then return end
+	S.inHooked[remote] = true
+	local okC, conn = pcall(function()
+		return remote.OnClientEvent:Connect(function(...)
+			if not S.on or S.replaying or not S.incoming then return end
+			local args = table.pack(...)
+			pcall(onCall, remote, "OnClientEvent", args, "in")
+		end)
+	end)
+	if okC and conn then table.insert(S.inConns, conn) end
+end
+local function setIncoming(on)
+	S.incoming = on
+	for _, c in ipairs(S.inConns) do pcall(function() c:Disconnect() end) end
+	S.inConns, S.inHooked = {}, {}
+	if S.inAdded then S.inAdded:Disconnect() S.inAdded = nil end
+	if on then
+		for _, d in ipairs(game:GetDescendants()) do hookIncoming(d) end
+		S.inAdded = game.DescendantAdded:Connect(hookIncoming)
+	end
+end
+
+-- ---------- actions ----------
+local function clip(text)
+	local f = setclipboard or toclipboard or (Clipboard and Clipboard.set)
+	if f then
+		local ok = pcall(f, text)
+		return ok
+	end
+	return false
+end
+local function replay(e, times)
+	if not (e and e.remote) then return end
+	S.replaying = true
+	for i = 1, times do
+		task.spawn(function()
+			pcall(function()
+				local a = e.args
+				if e.dir == "in" then
+					firesignal(e.remote.OnClientEvent, table.unpack(a, 1, a.n))
+				elseif e.method:lower() == "invokeserver" then
+					e.ret = table.pack(e.remote:InvokeServer(table.unpack(a, 1, a.n)))
+				else
+					e.remote:FireServer(table.unpack(a, 1, a.n))
+				end
+			end)
+		end)
+		if i % 20 == 0 then task.wait() end
+	end
+	task.delay(0.3, function() S.replaying = false end)
+end
+
+local codeBox, codeTitle
+local codeEntry
+openCode = function(e)
+	if not e then return setStatus("Select a log first.") end
+	codeEntry = e
+	codeTitle.Text = e.name .. "  -  " .. e.method
+	codeBox.Text = codeFor(e)
+	pcall(function() cwin:Show() end)
+end
+
+local function need()
+	if not S.sel then setStatus("Select a log first.") return nil end
+	return S.sel
+end
+
+local timesBox
+dBtn("View code", 1, function() local e = need() if e then openCode(e) end end)
+dBtn("Copy code", 2, function()
+	local e = need()
+	if e then setStatus(clip(codeFor(e)) and "Code copied." or "Your executor has no clipboard function.") end
+end)
+dBtn("Run", 3, function()
+	local e = need()
+	if not e then return end
+	local n = math.clamp(math.floor(tonumber(timesBox.Text) or 1), 1, 200)
+	replay(e, n)
+	setStatus("Ran " .. e.name .. " x" .. n)
+end)
+timesBox = new("TextBox", {
+	Text = "1", PlaceholderText = "times", BackgroundColor3 = T.back, BorderColor3 = T.line, TextColor3 = T.text, Font = Enum.Font.SourceSans,
+	TextSize = 15, ClearTextOnFocus = false, LayoutOrder = 4,
+}, btnArea)
+dBtn("Copy path", 5, function()
+	local e = need()
+	if e then setStatus(clip(instExpr(e.remote)) and "Remote path copied." or "Your executor has no clipboard function.") end
+end)
+dBtn("Copy args", 6, function()
+	local e = need()
+	if e then setStatus(clip(argsCode(e.args)) and "Arguments copied." or "Your executor has no clipboard function.") end
+end)
+dBtn("Exclude", 7, function()
+	local e = need()
+	if not e then return end
+	S.excluded[e.name] = true
+	saveRules()
+	removeByName(e.name)
+	setStatus("Excluded " .. e.name .. ". Undo it in Rules.")
+end)
+dBtn("Ignore args", 8, function()
+	local e = need()
+	if not e then return end
+	S.ignored[e.sig] = true
+	saveRules()
+	dropEntry(e)
+	setStatus("Ignoring this exact call. Undo it in Rules.")
+end)
+local blockBtn
+blockBtn = dBtn("Block", 9, function()
+	local e = need()
+	if not e then return end
+	if S.blocked[e.name] then S.blocked[e.name] = nil else S.blocked[e.name] = true end
+	saveRules()
+	setStatus((S.blocked[e.name] and "Blocking " or "Stopped blocking ") .. e.name)
+	refreshDetail()
+end)
+dBtn("Remove log", 10, function()
+	local e = need()
+	if e then dropEntry(e) end
+end)
+
+-- top bar buttons
+local spyBtn, pauseBtn, inBtn, stackBtn, spamBtn
+local function startSpy()
+	if not ensureHook() then
+		setStatus("Spy: " .. S.hookInfo)
+		return false
+	end
+	S.on = true
+	setOn(spyBtn, true)
+	spyBtn.Text = "Spy: ON"
+	return true
+end
+spyBtn = mkBtn(row1, "Spy: OFF", 1, function(b)
+	if S.on then
+		S.on = false
+		setOn(b, false)
+		b.Text = "Spy: OFF"
+		setStatus("Spy turned off.")
+	else
+		if startSpy() then setStatus("Spy is on. " .. S.hookInfo) end
+	end
+end)
+pauseBtn = mkBtn(row1, "Pause", 2, function(b)
+	S.paused = not S.paused
+	setOn(b, S.paused)
+	b.Text = S.paused and "Paused" or "Pause"
+end)
+inBtn = mkBtn(row1, "Incoming: off", 3, function(b)
+	setIncoming(not S.incoming)
+	setOn(b, S.incoming)
+	b.Text = S.incoming and "Incoming: on" or "Incoming: off"
+end)
+stackBtn = mkBtn(row1, "Stack: on", 4, function(b)
+	S.stack = not S.stack
+	setOn(b, S.stack)
+	b.Text = S.stack and "Stack: on" or "Stack: off"
+end)
+setOn(stackBtn, true)
+spamBtn = mkBtn(row1, "Spam guard: on", 5, function(b)
+	S.spam = not S.spam
+	setOn(b, S.spam)
+	b.Text = S.spam and "Spam guard: on" or "Spam guard: off"
+end)
+setOn(spamBtn, true)
+
+local filterBox = new("TextBox", {
+	Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, -290, 1, 0), BackgroundColor3 = T.back, BorderColor3 = T.line, TextColor3 = T.text,
+	PlaceholderText = "Search name, method or arguments", PlaceholderColor3 = T.sub, Font = Enum.Font.SourceSans, TextSize = 15,
+	ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left, Text = "",
+}, row2)
+new("UIPadding", { PaddingLeft = UDim.new(0, 8) }, filterBox)
+filterBox:GetPropertyChangedSignal("Text"):Connect(function()
+	S.filter = filterBox.Text:lower()
+	S.dirty = true
+end)
+local row2b = new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.new(0, 282, 1, 0), BackgroundTransparency = 1 }, row2)
+new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 5), HorizontalAlignment = Enum.HorizontalAlignment.Right, VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }, row2b)
+local rulesBtn
+rulesBtn = mkBtn(row2b, "Rules", 1, function(b)
+	S.view = S.view == "rules" and "log" or "rules"
+	setOn(b, S.view == "rules")
+	b.Text = S.view == "rules" and "Back to log" or "Rules"
+	for _, row in pairs(S.rows) do row.Visible = false end
+	S.dirty = true
+end)
+mkBtn(row2b, "Copy all", 2, function()
+	local t = exportText()
+	if not t then return setStatus("Nothing to copy yet.") end
+	setStatus(clip(t) and ("Copied " .. #S.logs .. " calls as a script.") or "Your executor has no clipboard function.")
+end)
+mkBtn(row2b, "Save file", 3, function()
+	local t = exportText()
+	if not t then return setStatus("Nothing to save yet.") end
+	local ok, err = pcall(function()
+		if makefolder and isfolder and not isfolder("InstanceX") then makefolder("InstanceX") end
+		local name = "InstanceX/RemoteSpy_" .. game.PlaceId .. "_" .. os.date("%H-%M-%S") .. ".lua"
+		writefile(name, t)
+		setStatus("Saved " .. name)
+	end)
+	if not ok then setStatus("Could not save: " .. tostring(err)) end
+end)
+mkBtn(row2b, "Clear", 4, function()
+	for _, row in pairs(S.rows) do row:Destroy() end
+	S.rows, S.logs, S.byKey, S.sel, S.total = {}, {}, {}, nil, 0
+	refreshDetail()
+	S.dirty = true
+end)
+
+-- ---------- code window ----------
+local cbar = new("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = T.bar, BorderSizePixel = 0 }, ccontent)
+codeTitle = new("TextLabel", {
+	Position = UDim2.new(0, 8, 0, 0), Size = UDim2.new(1, -16, 0, 16), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = T.sub, Font = Enum.Font.SourceSansBold, TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd, Text = "No log opened",
+}, cbar)
+local cbtns = new("Frame", { Position = UDim2.new(0, 4, 0, 16), Size = UDim2.new(1, -8, 0, 20), BackgroundTransparency = 1 }, cbar)
+new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, cbtns)
+local function cBtn(text, order, fn)
+	local b = new("TextButton", { AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 20), Text = text, AutoButtonColor = false, BackgroundColor3 = T.btn, BorderColor3 = T.line, TextColor3 = T.text, Font = Enum.Font.SourceSans, TextSize = 14, LayoutOrder = order }, cbtns)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, b)
+	b.MouseButton1Click:Connect(function() fn(b) end)
+	btnObjs[#btnObjs + 1] = b
+	return b
+end
+local cscroll = new("ScrollingFrame", {
+	Position = UDim2.new(0, 0, 0, 36), Size = UDim2.new(1, 0, 1, -36), BackgroundColor3 = T.back, BorderSizePixel = 0, ScrollBarThickness = 10,
+	CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.XY,
+}, ccontent)
+codeBox = new("TextBox", {
+	Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1, TextColor3 = T.text, Font = Enum.Font.Code,
+	TextSize = 15, MultiLine = true, ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+	TextWrapped = false, Text = "",
+}, cscroll)
+new("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingTop = UDim.new(0, 6), PaddingRight = UDim.new(0, 8), PaddingBottom = UDim.new(0, 6) }, codeBox)
+cBtn("Copy", 1, function() clip(codeBox.Text) end)
+cBtn("Run code", 2, function()
+	local fn, err = loadstring(codeBox.Text, "=RemoteSpy")
+	if not fn then
+		codeTitle.Text = "Syntax error: " .. tostring(err)
+		return
+	end
+	S.replaying = true
+	local ok, e2 = pcall(fn)
+	task.delay(0.3, function() S.replaying = false end)
+	codeTitle.Text = ok and "Code ran." or ("Error: " .. tostring(e2))
+end)
+cBtn("Reset", 3, function()
+	if codeEntry then codeBox.Text = codeFor(codeEntry) end
+end)
+
+-- ---------- loop and cleanup ----------
+local acc = 0
+table.insert(S.conns, RunService.Heartbeat:Connect(function(dt)
+	acc = acc + dt
+	if acc < 0.15 then return end
+	acc = 0
+	if S.note then
+		setStatus(S.note)
+		S.note = nil
+	end
+	if S.dirty then pcall(render) end
+end))
+
+R.SpyRefresh = function()
+	top.BackgroundColor3 = T.bar
+	detail.BackgroundColor3 = T.bar
+	cbar.BackgroundColor3 = T.bar
+	list.BackgroundColor3 = T.back
+	cscroll.BackgroundColor3 = T.back
+	filterBox.BackgroundColor3 = T.back
+	timesBox.BackgroundColor3 = T.back
+	for _, o in ipairs({ statusLbl, emptyLbl, dInfo, codeTitle }) do o.TextColor3 = T.sub end
+	dTitle.TextColor3 = T.text
+	codeBox.TextColor3 = T.text
+	for _, b in ipairs(btnObjs) do
+		if b.Parent then
+			b.BorderColor3 = T.line
+			b.TextColor3 = T.text
+			b.BackgroundColor3 = b:GetAttribute("on") and T.sel or T.btn
+		end
+	end
+	for _, row in pairs(S.rows) do row:Destroy() end
+	S.rows = {}
+	S.dirty = true
+end
+
+genv.__RPP_SpyCleanup = function()
+	S.alive = false
+	S.on = false
+	for _, c in ipairs(S.conns) do pcall(function() c:Disconnect() end) end
+	setIncoming(false)
+	if R and R.SpyRefresh == nil then return end
+	R.SpyRefresh = nil
+	R.SpyExport = nil
+end
+
+if R.SpyAuto ~= false then
+	task.defer(function()
+		if S.alive then startSpy() end
+	end)
+end
+render()
+
+]=====]
+
 Main.ToolSrc = [=====[
 local genv = (getgenv and getgenv()) or _G
 local R = genv.__RPP
@@ -43185,12 +45042,21 @@ local function barBtn(text, w, order)
 	b.MouseLeave:Connect(function() b.BackgroundColor3 = (b:GetAttribute("on") and T.sel) or T.btn end)
 	return b
 end
-local heldBtn = barBtn("Held", 46, 1)
-local allBtn = barBtn("List all", 58, 2)
+local heldBtn = barBtn("Held", 70, 1)
+local allBtn = barBtn("List all", 86, 2)
 local zoomOut = barBtn("-", 24, 3)
 local zoomIn = barBtn("+", 24, 4)
-local copyBtn = barBtn("Copy", 46, 5)
-local dlBtn = barBtn("Download", 72, 6)
+local copyBtn = barBtn("Copy", 70, 5)
+local dlBtn = barBtn("Download", 98, 6)
+do
+	local MI = R and R.Main and R.Main.Icon
+	if MI then
+		MI(heldBtn, "tool", 14)
+		MI(allBtn, "folder", 14)
+		MI(copyBtn, "copy", 14)
+		MI(dlBtn, "download", 14)
+	end
+end
 
 local status = new("TextLabel", {
 	Size = UDim2.new(1, -8, 0, 18), Position = UDim2.new(0, 6, 1, -19), BackgroundTransparency = 1, Font = Enum.Font.SourceSans, TextSize = 14,
